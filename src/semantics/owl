@@ -1,0 +1,83 @@
+(?c rdf:type owl:FunctionalProperty) =>
+	assert ((?c rdf:type owl:ObjectProperty) | (?c rdf:type owl:DatatypeProperty)) &
+	((?x ?c ?y1) & (?x ?c ?y?) => assert ?x = ?y)
+
+(?c rdf:type owl:InverseFunctionalProperty) =>
+	assert (?c rdf:type owl:ObjectProperty) &
+	((?x ?c ?y1) & (?x ?c ?y?) => assert ?x = ?y)
+
+(?c rdf:type owl:SymmetricProperty) =>
+	assert (?c rdf:type owl:ObjectProperty) &
+	((?x ?c ?y) => (?y ?c ?x))
+
+(?c rdf:type owl:TransitiveProperty) =>
+	assert (?c rdf:type owl:ObjectProperty) &
+	((?x ?c ?y) => (?y ?c ?z) => (?x ?c ?z))
+
+(?x owl:equivalentClass ?y) =>
+	(?a rdf:type ?x) => (?a rdf:type ?y)
+
+(?x owl:disjointWith ?y) =>
+	(?a rdf:type ?x) => !(?a rdf:type ?y))
+
+(?x owl:equivalentProperty ?y) =>
+	(?u ?x ?v) => (?u ?y ?v)
+
+(?x owl:inverseOf ?y) =>
+	(?u ?x ?v) => (?v ?y ?u)
+
+(?x owl:sameAs ?y) =>
+	?x = ?y
+
+(?x owl:differentFrom ?y) =>
+	?x != ?y
+
+(?x owl:complementOf ?y) => 
+	(?v rdf:type ?x) <=> !(?v rdf:type ?y)
+
+(?x owl:unionOf ?list) => 
+	(?list #rdf:listMember ?y) => (?v rdf:type ?y) => (?v rdf:type ?y)
+
+(?x owl:intersectionOf ?list) => 
+	(?v #owl:inIntersectionOf ?list) => (?v rdf:type ?x)
+
+(?list rdf:first ?c) & (?list rdf:rest ?rest) =>
+	(?v rdf:type ?c) & (?v #owl:inIntersectionOf ?rest) => (?v #owl:inIntersectionOf ?list)
+
+(?x owl:oneOf ?list) => 
+	(?list #rdf:listMember ?v) => (?v rdf:type ?y)
+
+# Axioms
+(owl:FunctionalProperty rdf:type owl:Class)
+(owl:InverseFunctionalProperty rdf:type owl:Class)
+(owl:SymmetricProperty rdf:type owl:Class)
+(owl:TransitiveProperty rdf:type owl:Class)
+(owl:DeprecatedClass rdf:type owl:Class)
+(owl:DeprecatedProperty rdf:type owl:Class)
+(owl:equivalentClass rdf:type rdf:Property)
+(owl:disjointWith rdf:type rdf:Property)
+(owl:equivalentProperty rdf:type rdf:Property)
+(owl:inverseOf rdf:type rdf:Property)
+(owl:sameAs rdf:type rdf:Property)
+(owl:differentFrom rdf:type rdf:Property)
+(owl:complementOf rdf:type rdf:Property)
+(owl:unionOf rdf:type rdf:Property)
+(owl:intersectionOf rdf:type rdf:Property)
+(owl:oneOf rdf:type rdf:Property)
+(owl:allValuesFrom rdf:type rdf:Property)
+(owl:onProperty rdf:type rdf:Property)
+(owl:someValuesFrom rdf:type rdf:Property)
+(owl:hasValue rdf:type rdf:Property)
+(owl:minCardinality rdf:type rdf:Property)
+(owl:maxCardinality rdf:type rdf:Property)
+(owl:cardinality rdf:type rdf:Property)
+(owl:distinctMembers rdf:type rdf:Property)
+(owl:versionInfo rdf:type owl:AnnotationProperty)
+(rdfs:label rdf:type owl:AnnotationProperty)
+(rdfs:comment rdf:type owl:AnnotationProperty)
+(rdfs:seeAlso rdf:type owl:AnnotationProperty)
+(rdfs:isDefinedBy rdf:type owl:AnnotationProperty)
+(owl:imports rdf:type owl:OntologyProperty)
+(owl:priorVersion rdf:type owl:OntologyProperty)
+(owl:backwardCompatibleWith rdf:type owl:OntologyProperty)
+(owl:incompatibleWith rdf:type owl:OntologyProperty)
