@@ -1,0 +1,59 @@
+#! The TreeLDR RDF semantics.
+
+## Fields sharing a property are the same.
+##
+## Since `tldr:format` is a functional property,
+## fields layouts will be merged approprietly.
+tldr:uniqueFieldName {
+	?layout tldr:field ?field1 .
+	?layout tldr:field ?field2 .
+	?field1 tldr:fieldFor ?prop .
+	?field2 tldr:fieldFor ?prop .
+} => {
+	?field1 = ?field2 .
+}
+
+## Fields sharing a name are the same.
+##
+## Since `tldr:format` is a functional property,
+## fields layouts will be merged approprietly.
+tldr:uniqueFieldName {
+	?layout tldr:field ?field1 .
+	?layout tldr:field ?field2 .
+	?field1 tldr:name ?name .
+	?field2 tldr:name ?name .
+} => {
+	?field1 = ?field2 .
+}
+
+## Layout Intersection.
+tldr:intersectionOf {
+	## Structure intersection.
+	tldr:structIntersection {
+		## Intersect field by name.
+		tldr:structIntersectionByName {
+			?x tldr:intersectionOf ?layout .
+			?layout tldr:field ?field .
+			?field tldr:name ?name .
+			?field tldr:format ?format .
+		} => {
+			?layout tldr:field ?targetField .
+			?targetField tldr:name ?name .
+			?targetField tldr:format ?targetFormat .
+			?targetFormat tldr:intersectionOf ?format .
+		}
+
+		## Intersect field by property.
+		tldr:structIntersectionByName {
+			?x tldr:intersectionOf ?layout .
+			?layout tldr:field ?field .
+			?field tldr:fieldFor ?prop .
+			?field tldr:format ?format .
+		} => {
+			?layout tldr:field ?targetField .
+			?targetField tldr:fieldFor ?prop .
+			?targetField tldr:format ?targetFormat .
+			?targetFormat tldr:intersectionOf ?format .
+		}
+	}
+}

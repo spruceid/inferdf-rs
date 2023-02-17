@@ -1,5 +1,11 @@
+#! RDFS Semantics inference rules.
+
 # `ICEXT(I(rdfs:Resource)) = IR`
-(?x, rdf:type, rdfs:Resource)
+rdfs:Resource {
+	# nothing.
+} => {
+	?x rdf:type rdfs:Resource .
+}
 
 # If `<x,y>` is in `IEXT(I(rdfs:domain))` and `<u,v>` is in `IEXT(x)` then `u` is in `ICEXT(y)`
 (?x, rdfs:domain, ?y) & (?u, ?x, ?v) => assert (?u, rdf:type, ?y)

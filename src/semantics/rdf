@@ -1,15 +1,15 @@
-# `x` is in `IP` if and only if `<x, I(rdf:Property)>` is in `IEXT(I(rdf:type))`
-(?a, ?x, ?b) => assert (?x, rdf:type, rdf:Property)
+#! RDF Semantics inference rules.
+
+## Property.
+##
+## Every resource used as property has type `rdf:Property`.
+##
+## `x` is in `IP` if and only if `<x, I(rdf:Property)>` is in `IEXT(I(rdf:type))`
+rdf:Property {
+	?a ?x ?b .
+} => {
+	?x rdf:type rdf:Property !
+}
 
 # For every IRI `aaa` in `D`, `<x, I(aaa)>` is in `IEXT(I(rdf:type))` if and only if `x is in the value space of `I(aaa)`
 # Built-in.
-
-# Axioms
-(rdf:type, rdf:type, rdf:Property)
-(rdf:subject, rdf:type, rdf:Property)
-(rdf:predicate, rdf:type, rdf:Property)
-(rdf:object, rdf:type, rdf:Property)
-(rdf:first, rdf:type, rdf:Property)
-(rdf:rest, rdf:type, rdf:Property)
-(rdf:value, rdf:type, rdf:Property)
-(rdf:nil, rdf:type, rdf:List)
