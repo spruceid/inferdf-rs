@@ -1,0 +1,97 @@
+#! RDFS Semantics inference rules.
+
+## Everything is a resource.
+## 
+## `ICEXT(I(rdfs:Resource)) = IR`
+rdfs:Resource {
+	?x ?y ?z .
+} => {
+	?x rdf:type rdfs:Resource .
+	?y rdf:type rdfs:Resource .
+	?z rdf:type rdfs:Resource .
+}
+
+## Property domain.
+## 
+## If `<x,y>` is in `IEXT(I(rdfs:domain))` and `<u,v>` is in `IEXT(x)` then `u` is in `ICEXT(y)`
+rdfs:domain {
+	?x rdfs:domain ?y .
+	?u ?x ?v .
+} => {
+	?u rdf:type ?y !
+}
+
+# If `<x,y>` is in `IEXT(I(rdfs:range))` and `<u,v>` is in `IEXT(x)` then `v` is in `ICEXT(y)`
+rdfs:range {
+	?x rdfs:range ?y .
+	?u ?x ?v .
+} => {
+	?v rdf:type ?y !
+}
+
+rdfs:subPropertyOf {
+	# If `<x,y>` is in `IEXT(I(rdfs:subPropertyOf))` then `x` and `y` are in `IP`
+	# and `IEXT(x)` is a subset of `IEXT(y)`
+	rdfs:subPropertyOfAction {
+		?x rdfs:subPropertyOf ?y .
+		?a ?x ?b .
+	} => {
+		?a ?y ?b .
+	}
+
+	# `IEXT(I(rdfs:subPropertyOf))` is reflexive on `IP`
+	rdfs:subPropertyOfReflexivity {
+		?x rdf:type rdfs:Property .
+	} => {
+		?x rdfs:subPropertyOf ?x .
+	}
+
+	# `IEXT(I(rdfs:subPropertyOf))` is transitive on `IP`
+	rdfs:subPropertyOfTransitivity {
+		?x rdfs:subPropertyOf ?y .
+		?x rdfs:subPropertyOf ?z .
+	} => {
+		?x rdfs:subPropertyOf ?z .
+	}
+}
+
+# If `x` is in `IC` then `<x, I(rdfs:Resource)>` is in `IEXT(I(rdfs:subClassOf))`
+{
+	?x rdf:type rdfs:Class .
+} => {
+	?x rdfs:subClassOf rdfs:Resource .
+}
+
+{
+	# If `<x,y>` is in `IEXT(I(rdfs:subClassOf))` then `x` and `y` are in `IC` and
+	# `ICEXT(x)` is a subset of `ICEXT(y)`
+	{
+		?x rdfs:subClassOf ?y .
+		?a rdf:type ?x .
+	} => {
+		?a rdf:type ?y .
+	}
+
+	# `IEXT(I(rdfs:subClassOf))` is transitive and reflexive on `IC`
+	{
+		?x rdf:type rdfs:Class .
+	} => {
+		?x rdfs:subClassOf ?x .
+	}
+
+	# `IEXT(I(rdfs:subClassOf))` is transitive and reflexive on `IC`
+	{
+		?x rdfs:subClassOf ?y .
+		?x rdfs:subClassOf ?z .
+	} => {
+		?x rdfs:subClassOf ?z .
+	}
+}
+
+# If `x` is in `ICEXT(I(rdfs:ContainerMembershipProperty))` then
+# `<x, I(rdfs:member)>` is in `IEXT(I(rdfs:subPropertyOf))`
+{
+	?x rdf:type rdfs:ContainerMembershipProperty .
+} => {
+	?x rdfs:subPropertyOf rdfs:member .
+}

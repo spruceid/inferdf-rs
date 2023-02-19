@@ -9,7 +9,7 @@ tldr:uniqueFieldName {
 	?layout tldr:field ?field2 .
 	?field1 tldr:fieldFor ?prop .
 	?field2 tldr:fieldFor ?prop .
-} => {
+} => {`
 	?field1 = ?field2 .
 }
 
