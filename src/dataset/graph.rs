@@ -21,6 +21,24 @@ pub struct Fact<M> {
 	pub cause: Cause<M>
 }
 
+impl<M> Fact<M> {
+	pub fn new(
+		triple: Triple,
+		positive: bool,
+		cause: Cause<M>
+	) -> Self {
+		Self {
+			triple,
+			positive,
+			cause
+		}
+	}
+
+	pub fn in_graph(self, g: Option<Id>) -> super::Fact<M> {
+		super::Fact::new(self.triple.into_quad(g), self.positive, self.cause)
+	}
+}
+
 pub struct FactMut<'a, M>(&'a mut Fact<M>);
 
 impl<'a, M> FactMut<'a, M> {
@@ -94,21 +112,26 @@ pub struct Resource {
 pub struct Contradiction(Triple);
 
 impl<M> Graph<M> {
+	pub fn contains(&self, triple: Triple, positive: bool) -> bool {
+		self.find_triple(triple).map(|(_, f)| f.positive == positive).unwrap_or(false)
+	}
+	
 	pub fn get(&self, i: usize) -> Option<&Fact<M>> {
 		self.facts.get(i)
 	}
 
-	pub fn insert(&mut self, triple: Triple, positive: bool, cause: Cause<M>) -> Result<(usize, bool), Contradiction> {
-		match self.find_triple_mut(triple) {
-			Some((i, fact)) => {
-				if fact.is_positive() == positive {
+	pub fn insert(&mut self, fact: Fact<M>) -> Result<(usize, bool), Contradiction> {
+		match self.find_triple_mut(fact.triple) {
+			Some((i, current_fact)) => {
+				if current_fact.is_positive() == fact.positive {
 					Ok((i, false))
 				} else {
-					Err(Contradiction(triple))
+					Err(Contradiction(fact.triple))
 				}
 			}
 			None => {
-				let i = self.facts.insert(Fact { triple, positive, cause });
+				let triple = fact.triple;
+				let i = self.facts.insert(fact);
 				self.resources.get_mut(triple.subject()).unwrap().as_subject.insert(i);
 				self.resources.get_mut(triple.predicate()).unwrap().as_predicate.insert(i);
 				self.resources.get_mut(triple.object()).unwrap().as_object.insert(i);
@@ -124,7 +147,7 @@ impl<M> Graph<M> {
 		let mut indexes = Vec::new();
 
 		for s in facts {
-			indexes.push(self.insert(s.triple, s.positive, s.cause)?);
+			indexes.push(self.insert(s)?);
 		}
 
 		Ok(indexes)
@@ -210,6 +233,15 @@ impl<M> Graph<M> {
 				object: o.map(|o| self.resources[&o].as_object.iter())
 			}
 		}
+	}
+}
+
+impl<M> IntoIterator for Graph<M> {
+	type IntoIter = slab::IntoIter<Fact<M>>;
+	type Item = (usize, Fact<M>);
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.facts.into_iter()
 	}
 }
 

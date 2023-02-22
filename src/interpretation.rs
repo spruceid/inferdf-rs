@@ -3,7 +3,7 @@ use std::hash::Hash;
 use hashbrown::{HashMap, HashSet};
 use slab::Slab;
 
-use crate::{Id, Vocabulary, LiteralVocabulary, SemiInterpretedQuad, Quad, SemiInterpretedTerm, SemiInterpretedLiteral, Triple, GlobalTerm, GlobalLiteral, GlobalTriple, GlobalTermExt};
+use crate::{Id, Vocabulary, LiteralVocabulary, SemiInterpretedQuad, Quad, SemiInterpretedTerm, SemiInterpretedLiteral, Triple, GlobalTerm, GlobalLiteral, GlobalTriple};
 
 pub type LiteralValue<V> = SemiInterpretedLiteral<V>;
 
@@ -163,43 +163,6 @@ impl<V: Vocabulary> Interpretation<V> {
 		}
 	}
 
-	pub fn insert_term_with_dependencies(
-		&mut self,
-		sources: &[Interpretation<V>],
-		term: SemiInterpretedTerm<V>,
-	) -> Id
-	where
-		V::Iri: Copy + Eq + Hash,
-		V::BlankId: Copy + Eq + Hash,
-		V::StringLiteral: Copy + Eq + Hash
-	{
-		// ...
-
-		if sources.is_empty() {
-			self.insert_term(term)
-		} else {
-			match self.term_interpretation(term) {
-				Some(id) => id,
-				None => {
-					for source in sources {
-						if let Some(source_id) = source.term_interpretation(term) {
-							for source_term in source.terms_of(source_id) {
-								if let Some(source_term) = source_term.try_interpret_literal_type_with(|t| self.term_interpretation(t)) {
-									if let Some(id) = self.term_interpretation(source_term) {
-										self.set_term_interpretation(term, id);
-										return id
-									}
-								}
-							}
-						}
-					}
-	
-					self.insert_term(term)
-				}
-			}
-		}
-	}
-
 	pub fn set_term_interpretation(&mut self, term: SemiInterpretedTerm<V>, id: Id)
 	where
 		V::Iri: Copy + Eq + Hash,
@@ -249,24 +212,6 @@ impl<V: Vocabulary> Interpretation<V> {
 			self.insert_term(p),
 			self.insert_term(o),
 			g.map(|g| self.insert_term(g))
-		)
-	}
-
-	pub fn insert_quad_with_dependencies(
-		&mut self,
-		sources: &[Interpretation<V>],
-		rdf_types::Quad(s, p, o, g): SemiInterpretedQuad<V>
-	) -> Quad
-	where
-		V::Iri: Copy + Eq + Hash,
-		V::BlankId: Copy + Eq + Hash,
-		V::StringLiteral: Copy + Eq + Hash
-	{
-		rdf_types::Quad(
-			self.insert_term_with_dependencies(sources, s),
-			self.insert_term_with_dependencies(sources, p),
-			self.insert_term_with_dependencies(sources, o),
-			g.map(|g| self.insert_term_with_dependencies(sources, g))
 		)
 	}
 
@@ -345,5 +290,218 @@ where
 
 			literal.map(GlobalTerm::Literal)
 		})
+	}
+}
+
+/// Interpretation dependency.
+pub trait Dependency<V: Vocabulary> {
+	fn interpretation(&self) -> &Interpretation<V>;
+}
+
+pub struct CompositeInterpretation<V: Vocabulary> {
+	/// Final interpretation.
+	interpretation: Interpretation<V>,
+
+	/// Interfaces with dependency interpretations.
+	interfaces: HashMap<usize, Interface>
+}
+
+impl<V: Vocabulary> CompositeInterpretation<V> {
+	pub fn term_interpretation(&self, term: SemiInterpretedTerm<V>) -> Option<Id>
+	where
+		V::Iri: Eq + Hash,
+		V::BlankId: Eq + Hash,
+		V::StringLiteral: Eq + Hash
+	{
+		self.interpretation.term_interpretation(term)
+	}
+
+	pub fn insert_term<D: Dependency<V>>(
+		&mut self,
+		dependencies: &HashMap<usize, D>,
+		term: SemiInterpretedTerm<V>,
+	) -> Id
+	where
+		V::Iri: Copy + Eq + Hash,
+		V::BlankId: Copy + Eq + Hash,
+		V::StringLiteral: Copy + Eq + Hash
+	{
+		match self.term_interpretation(term) {
+			Some(id) => id,
+			None => {
+				let id = self.interpretation.insert_term(term);
+
+				for (&d, dependency) in dependencies {
+					if let Some(dependency_id) = dependency.interpretation().term_interpretation(term) {
+						let i = self.interfaces.entry(d).or_default();
+						i.source.insert(id, vec![dependency_id]);
+						i.target.insert(dependency_id, id);
+
+						for other_term in dependency.interpretation().terms_of(dependency_id) {
+							self.interpretation.set_term_interpretation(term, id);
+						}
+					}
+				}
+
+				id
+			}
+		}
+	}
+
+	pub fn insert_quad<D: Dependency<V>>(
+		&mut self,
+		dependencies: &HashMap<usize, D>,
+		rdf_types::Quad(s, p, o, g): SemiInterpretedQuad<V>
+	) -> Quad
+	where
+		V::Iri: Copy + Eq + Hash,
+		V::BlankId: Copy + Eq + Hash,
+		V::StringLiteral: Copy + Eq + Hash
+	{
+		rdf_types::Quad(
+			self.insert_term(dependencies, s),
+			self.insert_term(dependencies, p),
+			self.insert_term(dependencies, o),
+			g.map(|g| self.insert_term(dependencies, g))
+		)
+	}
+
+	/// Merge the two given interpreted resources.
+	/// 
+	/// Returns the `Id` of the merged resource, followed by the `Id` of the
+	/// removed resource and the removed resource literal instances.
+	pub fn merge(&mut self, mut a: Id, mut b: Id) -> (Id, Id, ResourceLiteralInstances<V>)
+	where
+		V::Iri: Copy + Eq + Hash,
+		V::BlankId: Copy + Eq + Hash,
+		V::StringLiteral: Copy + Eq + Hash
+	{
+		let (a, b, removed_lexical_values) = self.interpretation.merge(a, b);
+
+		// merge in interfaces.
+		for interface in self.interfaces.values_mut() {
+			let more_dependency_ids = interface.source.remove(&b).unwrap();
+			for &dependency_id in &more_dependency_ids {
+				interface.target.insert(dependency_id, a);
+			}
+
+			let dependency_ids = &mut interface.source[&a];
+			dependency_ids.extend(more_dependency_ids);
+		}
+
+		(a, b, removed_lexical_values)
+	}
+
+	pub fn dependency_ids(&self, d: usize, id: Id) -> DependencyIds {
+		match self.interfaces.get(&d) {
+			Some(i) => match i.source.get(&id) {
+				Some(ids) => DependencyIds::Some(ids.iter()),
+				None => DependencyIds::None
+			}
+			None => DependencyIds::None
+		}
+	}
+
+	pub fn dependency_triples(&self, d: usize, triple: Triple) -> DependencyTriples {
+		DependencyTriples {
+			subjects: self.dependency_ids(d, triple.0),
+			predicates: self.dependency_ids(d, triple.1),
+			objects: self.dependency_ids(d, triple.2),
+			current: None
+		}
+	}
+}
+
+/// Describes how a shared resources are interpreted in a dependency
+/// interpretation.
+#[derive(Default)]
+pub struct Interface {
+	/// From composite id to dependency ids.
+	source: HashMap<Id, Vec<Id>>,
+
+	/// From dependency id to composite id.
+	target: HashMap<Id, Id>,
+}
+
+#[derive(Debug, Clone)]
+pub enum DependencyIds<'a> {
+	Some(std::slice::Iter<'a, Id>),
+	None
+}
+
+impl<'a> Iterator for DependencyIds<'a> {
+	type Item = Id;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		match self {
+			Self::Some(iter) => iter.next().copied(),
+			Self::None => None
+		}
+	}
+}
+
+pub struct DependencyTriples<'a> {
+	subjects: DependencyIds<'a>,
+	predicates: DependencyIds<'a>,
+	objects: DependencyIds<'a>,
+	current: Option<DependencyPO<'a>>
+}
+
+impl<'a> Iterator for DependencyTriples<'a> {
+	type Item = Triple;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match &mut self.current {
+				Some(current) => match current.next() {
+					Some(t) => break Some(t),
+					None => self.current = None
+				}
+				None => match self.subjects.next() {
+					Some(s) => self.current = Some(DependencyPO { subject: s, predicates: self.predicates.clone(), objects: self.objects.clone(), current: None }),
+					None => break None
+				}
+ 			}
+		}
+	}
+}
+
+struct DependencyPO<'a> {
+	subject: Id,
+	predicates: DependencyIds<'a>,
+	objects: DependencyIds<'a>,
+	current: Option<DependencyO<'a>>
+}
+
+impl<'a> Iterator for DependencyPO<'a> {
+	type Item = Triple;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match &mut self.current {
+				Some(current) => match current.next() {
+					Some(t) => break Some(t),
+					None => self.current = None
+				}
+				None => match self.predicates.next() {
+					Some(p) => self.current = Some(DependencyO { subject: self.subject, predicate: p, objects: self.objects.clone() }),
+					None => break None
+				}
+ 			}
+		}
+	}
+}
+
+struct DependencyO<'a> {
+	subject: Id,
+	predicate: Id,
+	objects: DependencyIds<'a>
+}
+
+impl<'a> Iterator for DependencyO<'a> {
+	type Item = Triple;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.objects.next().map(|o| rdf_types::Triple(self.subject, self.predicate, o))
 	}
 }

@@ -1,6 +1,7 @@
 pub mod cause;
 pub mod interpretation;
 pub mod dataset;
+pub mod context;
 // pub mod rule;
 
 pub use cause::Cause;
@@ -48,22 +49,42 @@ impl<V: Vocabulary> GlobalLiteral<V> {
 		SemiInterpretedLiteral::new(self.value, id)
 	}
 
-	pub fn interpret_type_with(&self, f: impl Clone + Fn(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedLiteral<V>
+	pub fn interpret_type_with_mut(&self, f: &mut impl FnMut(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedLiteral<V>
 	where
 		V::Iri: Copy,
 		V::BlankId: Copy,
 		V::StringLiteral: Copy
 	{
-		SemiInterpretedLiteral::new(self.value, f(self.type_.interpret_literal_type_with(f.clone())))
+		let a = self.type_.interpret_literal_type_with(&mut *f);
+		SemiInterpretedLiteral::new(self.value, f(a))
 	}
 
-	pub fn try_interpret_type_with(&self, f: impl Clone + Fn(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedLiteral<V>>
+	pub fn try_interpret_type_with_mut(&self, f: &mut impl FnMut(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedLiteral<V>>
 	where
 		V::Iri: Copy,
 		V::BlankId: Copy,
 		V::StringLiteral: Copy
 	{
-		Some(SemiInterpretedLiteral::new(self.value, f(self.type_.try_interpret_literal_type_with(f.clone())?)?))
+		let a = self.type_.try_interpret_literal_type_with(&mut *f)?;
+		Some(SemiInterpretedLiteral::new(self.value, f(a)?))
+	}
+
+	pub fn interpret_type_with(&self, mut f: impl FnMut(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedLiteral<V>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::StringLiteral: Copy
+	{
+		self.interpret_type_with_mut(&mut f)
+	}
+
+	pub fn try_interpret_type_with(&self, mut f: impl FnMut(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedLiteral<V>>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::StringLiteral: Copy
+	{
+		self.try_interpret_type_with_mut(&mut f)
 	}
 }
 
@@ -108,21 +129,39 @@ pub type SemiInterpretedTerm<V> = rdf_types::Term<
 >;
 
 pub trait GlobalTermExt<V: Vocabulary> {
-	fn interpret_literal_type_with(&self, f: impl Clone + Fn(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedTerm<V>
+	fn interpret_literal_type_with_mut(&self, f: &mut impl FnMut(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedTerm<V>
 	where
 		V::Iri: Copy,
 		V::BlankId: Copy,
 		V::StringLiteral: Copy;
 
-	fn try_interpret_literal_type_with(&self, f: impl Clone + Fn(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedTerm<V>>
+	fn try_interpret_literal_type_with_mut(&self, f: &mut impl FnMut(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedTerm<V>>
 	where
 		V::Iri: Copy,
 		V::BlankId: Copy,
 		V::StringLiteral: Copy;
+
+	fn interpret_literal_type_with(&self, mut f: impl FnMut(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedTerm<V>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::StringLiteral: Copy
+	{
+		self.interpret_literal_type_with_mut(&mut f)
+	}
+
+	fn try_interpret_literal_type_with(&self, mut f: impl FnMut(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedTerm<V>>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::StringLiteral: Copy
+	{
+		self.try_interpret_literal_type_with_mut(&mut f)
+	}
 }
 
 impl<V: Vocabulary> GlobalTermExt<V> for GlobalTerm<V> {
-	fn interpret_literal_type_with(&self, f: impl Clone + Fn(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedTerm<V>
+	fn interpret_literal_type_with_mut(&self, f: &mut impl FnMut(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedTerm<V>
 	where
 		V::Iri: Copy,
 		V::BlankId: Copy,
@@ -131,11 +170,11 @@ impl<V: Vocabulary> GlobalTermExt<V> for GlobalTerm<V> {
 		match self {
 			Self::Iri(iri) => SemiInterpretedTerm::Iri(*iri),
 			Self::Blank(blank) => SemiInterpretedTerm::Blank(*blank),
-			Self::Literal(literal) => SemiInterpretedTerm::Literal(literal.interpret_type_with(f))
+			Self::Literal(literal) => SemiInterpretedTerm::Literal(literal.interpret_type_with_mut(f))
 		}
 	}
 
-	fn try_interpret_literal_type_with(&self, f: impl Clone + Fn(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedTerm<V>>
+	fn try_interpret_literal_type_with_mut(&self, f: &mut impl FnMut(SemiInterpretedTerm<V>) -> Option<Id>) -> Option<SemiInterpretedTerm<V>>
 	where
 		V::Iri: Copy,
 		V::BlankId: Copy,
@@ -144,7 +183,7 @@ impl<V: Vocabulary> GlobalTermExt<V> for GlobalTerm<V> {
 		match self {
 			Self::Iri(iri) => Some(SemiInterpretedTerm::Iri(*iri)),
 			Self::Blank(blank) => Some(SemiInterpretedTerm::Blank(*blank)),
-			Self::Literal(literal) => Some(SemiInterpretedTerm::Literal(literal.try_interpret_type_with(f)?))
+			Self::Literal(literal) => Some(SemiInterpretedTerm::Literal(literal.try_interpret_type_with_mut(f)?))
 		}
 	}
 }
@@ -155,6 +194,30 @@ pub type GlobalQuad<V> = rdf_types::Quad<
 	GlobalTerm<V>,
 	GlobalTerm<V>,
 >;
+
+pub trait GlobalQuadExt<V: Vocabulary> {
+	fn interpret_literal_types_with(&self, f: impl FnMut(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedQuad<V>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::StringLiteral: Copy;
+}
+
+impl<V: Vocabulary> GlobalQuadExt<V> for GlobalQuad<V> {
+	fn interpret_literal_types_with(&self, mut f: impl FnMut(SemiInterpretedTerm<V>) -> Id) -> SemiInterpretedQuad<V>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::StringLiteral: Copy
+	{
+		rdf_types::Quad(
+			self.subject().interpret_literal_type_with(&mut f),
+			self.predicate().interpret_literal_type_with(&mut f),
+			self.object().interpret_literal_type_with(&mut f),
+			self.graph().map(|g| g.interpret_literal_type_with(f))
+		)
+	}
+}
 
 pub type SemiInterpretedQuad<V> = rdf_types::Quad<
 	SemiInterpretedTerm<V>,
