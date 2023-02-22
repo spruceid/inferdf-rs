@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.17"
-rdf-types = { version = "0.12.17", features = ["meta"] }
+rdf-types = { version = "0.12.18", features = ["meta"] }
 iref = { version = "2.2.3", features = ["hashbrown"] }
 static-iref = "2.0.0"
 derivative = "2.2.0"

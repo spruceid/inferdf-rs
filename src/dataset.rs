@@ -16,6 +16,13 @@ pub struct Dataset<V: Vocabulary, M> {
 }
 
 impl<V: Vocabulary, M> Dataset<V, M> {
+	pub fn graph(&self, id: Option<Id>) -> Option<&Graph<M>> {
+		match id {
+			None => Some(&self.default_graph),
+			Some(id) => self.named_graphs.get(&id)
+		}
+	}
+
 	pub fn graphs_mut(&mut self) -> GraphsMut<M> {
 		GraphsMut {
 			default_graph: Some(&mut self.default_graph),
@@ -87,16 +94,23 @@ impl<'a, M> Iterator for GraphsMut<'a, M> {
 }
 
 pub trait Semantics<V: Vocabulary, M> {
-	fn deduce(&self, triple: GlobalTriple<V>, graph: Option<GlobalTerm<V>>, stack: &mut Vec<Statement<V, M>>);
+	fn deduce(&self, quad: GlobalQuad<V>, stack: &mut Vec<Statement<V, M>>);
 }
 
 pub enum Statement<V: Vocabulary, M> {
 	Fact(GlobalQuad<V>, bool, Cause<M>),
-	Eq(GlobalTerm<V>, GlobalTerm<V>)
+	Eq(GlobalTerm<V>, GlobalTerm<V>),
+	Neq(GlobalTerm<V>, GlobalTerm<V>)
 }
 
 pub trait Context<V: Vocabulary, M> {
-	fn contains(&self, triple: GlobalTriple<V>) -> bool;
+	type EquivalentTerms<'a>: Iterator<Item = GlobalQuad<V>> where Self: 'a;
+
+	/// Returns an iterator over all the known equivalent syntactic representations of the given term.
+	fn equivalent_terms(&self, term: GlobalTerm<V>) -> Self::EquivalentTerms<'_>;
+
+	/// Checks if the context contains the given triple.
+	fn contains(&self, triple: &GlobalTriple<V>) -> bool;
 }
 
 pub struct DatasetExtension<V: Vocabulary, M, C, S> {
@@ -123,25 +137,46 @@ impl<V: Vocabulary, M, C: Context<V, M>, S: Semantics<V, M>> DatasetExtension<V,
 
 		while let Some(statement) = stack.pop() {
 			match statement {
-				Statement::Fact(quad @ rdf_types::Quad(s, p, o, g), positive, cause) => {
-					let triple = rdf_types::Triple(s, p, o);
+				Statement::Fact(quad, positive, cause) => {
+					let (triple, g) = quad.into_triple();
 			
-					if !self.context.contains(triple) {
-						let local_quad = self.dataset.interpretation.insert_quad(quad);
-						self.dataset.insert(local_quad, positive, cause.clone())?;
-						self.semantics.deduce(triple, g, &mut stack);
+					if !self.context.contains(&triple) {
+						let quad = triple.into_quad(g);
+						let local_quad = self.dataset.interpretation.insert_quad_with_dependencies(&quad);
+						let (_, _, inserted) = self.dataset.insert(local_quad, positive, cause.clone())?;
+						if inserted {
+							self.semantics.deduce(quad, &mut stack);
+						}
 					}
 				}
 				Statement::Eq(a, b) => {
-					let a = self.dataset.interpretation.insert_term(a);
-					let b = self.dataset.interpretation.insert_term(b);
+					let a = self.dataset.interpretation.insert_term(&a);
+					let b = self.dataset.interpretation.insert_term(&b);
 					let new_facts = self.dataset.merge(a, b)?;
 					for (g, i) in new_facts {
-						let triple = self.dataset.graph(g).unwrap().get(i);
-						stack.push(Statement::Quad(GlobalQuad::new(
-							// ...
-						)))
+						let fact = self.dataset.graph(g).unwrap().get(i).unwrap();
+						for rdf_types::Triple(s, p, o) in self.dataset.interpretation.global_triple_of(fact.triple) {
+							match g {
+								None => {
+									stack.push(Statement::Fact(
+										GlobalQuad::new(s, p, o, None),
+										fact.positive,
+										fact.cause.clone()
+									))
+								}
+								Some(g) => for g in self.dataset.interpretation.terms_of(g) {
+									stack.push(Statement::Fact(
+										GlobalQuad::new(s.clone(), p.clone(), o.clone(), Some(g)),
+										fact.positive,
+										fact.cause.clone()
+									))
+								}
+							}
+						}
 					}
+				}
+				Statement::Neq(_a, _b) => {
+					todo!()
 				}
 			}
 		}

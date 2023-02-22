@@ -94,6 +94,10 @@ pub struct Resource {
 pub struct Contradiction(Triple);
 
 impl<M> Graph<M> {
+	pub fn get(&self, i: usize) -> Option<&Fact<M>> {
+		self.facts.get(i)
+	}
+
 	pub fn insert(&mut self, triple: Triple, positive: bool, cause: Cause<M>) -> Result<(usize, bool), Contradiction> {
 		match self.find_triple_mut(triple) {
 			Some((i, fact)) => {
