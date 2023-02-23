@@ -1,40 +1,55 @@
-use std::collections::BTreeSet;
+use std::{
+	collections::BTreeSet,
+	hash::Hash,
+	iter::{Copied, Peekable},
+};
 
 use derivative::Derivative;
-use hashbrown::HashMap;
+use hashbrown::{Equivalent, HashMap};
 use slab::Slab;
 
-use crate::{Triple, Pattern, Cause, TripleExt, Id};
+use crate::{Cause, Id, Pattern, Quad, Triple, TripleExt};
 
 #[derive(Derivative, Debug, Clone)]
-#[derivative(Default(bound=""))]
+#[derivative(Default(bound = ""))]
 pub struct Graph<M> {
 	/// All the facts in the graph.
 	facts: Slab<Fact<M>>,
-	resources: HashMap<Id, Resource>
+	resources: HashMap<Id, Resource>,
+}
+
+fn get_opt<'a, K, V, Q>(map: &'a HashMap<K, V>, key: Option<&Q>) -> Option<Option<&'a V>>
+where
+	K: Eq + Hash,
+	Q: Hash + Equivalent<K>,
+{
+	match key {
+		Some(key) => map.get(key).map(Some),
+		None => Some(None),
+	}
 }
 
 #[derive(Debug, Clone)]
 pub struct Fact<M> {
 	pub triple: Triple,
 	pub positive: bool,
-	pub cause: Cause<M>
+	pub cause: Cause<M>,
 }
 
 impl<M> Fact<M> {
-	pub fn new(
-		triple: Triple,
-		positive: bool,
-		cause: Cause<M>
-	) -> Self {
+	pub fn new(triple: Triple, positive: bool, cause: Cause<M>) -> Self {
 		Self {
 			triple,
 			positive,
-			cause
+			cause,
 		}
 	}
 
-	pub fn in_graph(self, g: Option<Id>) -> super::Fact<M> {
+	pub fn with_graph(&self, g: Option<Id>) -> super::Fact<&M> {
+		super::Fact::new(self.triple.into_quad(g), self.positive, self.cause.as_ref())
+	}
+
+	pub fn into_with_graph(self, g: Option<Id>) -> super::Fact<M> {
 		super::Fact::new(self.triple.into_quad(g), self.positive, self.cause)
 	}
 }
@@ -86,12 +101,23 @@ impl ReplaceId for Triple {
 	}
 }
 
+impl ReplaceId for Quad {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.subject_mut().replace_id(a, b);
+		self.predicate_mut().replace_id(a, b);
+		self.object_mut().replace_id(a, b);
+		if let Some(g) = self.graph_mut() {
+			g.replace_id(a, b);
+		}
+	}
+}
+
 impl ReplaceId for Option<Id> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		if let Some(id) = self {
 			id.replace_id(a, b)
 		}
- 	}
+	}
 }
 
 impl ReplaceId for Id {
@@ -109,13 +135,15 @@ pub struct Resource {
 	as_object: BTreeSet<usize>,
 }
 
-pub struct Contradiction(Triple);
+pub struct Contradiction(pub Triple);
 
 impl<M> Graph<M> {
 	pub fn contains(&self, triple: Triple, positive: bool) -> bool {
-		self.find_triple(triple).map(|(_, f)| f.positive == positive).unwrap_or(false)
+		self.find_triple(triple)
+			.map(|(_, f)| f.positive == positive)
+			.unwrap_or(false)
 	}
-	
+
 	pub fn get(&self, i: usize) -> Option<&Fact<M>> {
 		self.facts.get(i)
 	}
@@ -132,9 +160,21 @@ impl<M> Graph<M> {
 			None => {
 				let triple = fact.triple;
 				let i = self.facts.insert(fact);
-				self.resources.get_mut(triple.subject()).unwrap().as_subject.insert(i);
-				self.resources.get_mut(triple.predicate()).unwrap().as_predicate.insert(i);
-				self.resources.get_mut(triple.object()).unwrap().as_object.insert(i);
+				self.resources
+					.get_mut(triple.subject())
+					.unwrap()
+					.as_subject
+					.insert(i);
+				self.resources
+					.get_mut(triple.predicate())
+					.unwrap()
+					.as_predicate
+					.insert(i);
+				self.resources
+					.get_mut(triple.object())
+					.unwrap()
+					.as_object
+					.insert(i);
 				Ok((i, true))
 			}
 		}
@@ -142,7 +182,7 @@ impl<M> Graph<M> {
 
 	pub fn try_extend(
 		&mut self,
-		facts: impl IntoIterator<Item = Fact<M>>
+		facts: impl IntoIterator<Item = Fact<M>>,
 	) -> Result<Vec<(usize, bool)>, Contradiction> {
 		let mut indexes = Vec::new();
 
@@ -153,12 +193,31 @@ impl<M> Graph<M> {
 		Ok(indexes)
 	}
 
-	pub fn remove_triple_with(&mut self, triple: Triple, f: impl FnOnce(&Fact<M>) -> bool) -> Option<Fact<M>> {
-		let i = self.find_triple(triple).filter(|(_, s)| f(s)).map(|(i, _)| i);
+	pub fn remove_triple_with(
+		&mut self,
+		triple: Triple,
+		f: impl FnOnce(&Fact<M>) -> bool,
+	) -> Option<Fact<M>> {
+		let i = self
+			.find_triple(triple)
+			.filter(|(_, s)| f(s))
+			.map(|(i, _)| i);
 		i.map(|i| {
-			self.resources.get_mut(triple.subject()).unwrap().as_subject.remove(&i);
-			self.resources.get_mut(triple.predicate()).unwrap().as_predicate.remove(&i);
-			self.resources.get_mut(triple.object()).unwrap().as_object.remove(&i);
+			self.resources
+				.get_mut(triple.subject())
+				.unwrap()
+				.as_subject
+				.remove(&i);
+			self.resources
+				.get_mut(triple.predicate())
+				.unwrap()
+				.as_predicate
+				.remove(&i);
+			self.resources
+				.get_mut(triple.object())
+				.unwrap()
+				.as_object
+				.remove(&i);
 			self.facts.remove(i)
 		})
 	}
@@ -209,30 +268,70 @@ impl<M> Graph<M> {
 		self.matching_mut(triple.into_pattern()).next()
 	}
 
-	fn matching(&self, rdf_types::Triple(s, p, o): Pattern) -> Matching<M> {
-		if s.is_none() && p.is_none() && o.is_none() {
-			Matching::All(self.facts.iter())
-		} else {
-			Matching::Constrained {
+	pub fn resource_facts(&self, id: Id) -> ResourceFacts<M> {
+		match self.resources.get(&id) {
+			Some(r) => ResourceFacts::Some {
 				facts: &self.facts,
-				subject: s.map(|s| self.resources[&s].as_subject.iter()),
-				predicate: p.map(|p| self.resources[&p].as_predicate.iter()),
-				object: o.map(|o| self.resources[&o].as_object.iter())
-			}
+				subject: r.as_subject.iter().copied().peekable(),
+				predicate: r.as_predicate.iter().copied().peekable(),
+				object: r.as_object.iter().copied().peekable(),
+			},
+			None => ResourceFacts::None,
 		}
 	}
 
-	fn matching_mut(&mut self, rdf_types::Triple(s, p, o): Pattern) -> MatchingMut<M> {
+	pub fn matching(&self, rdf_types::Triple(s, p, o): Pattern) -> Matching<M> {
+		if s.is_none() && p.is_none() && o.is_none() {
+			Matching::All(self.facts.iter())
+		} else {
+			get_opt(&self.resources, s.as_ref())
+				.and_then(|s| {
+					get_opt(&self.resources, p.as_ref()).and_then(|p| {
+						get_opt(&self.resources, o.as_ref()).map(|o| Matching::Constrained {
+							facts: &self.facts,
+							subject: s.map(|r| r.as_subject.iter()),
+							predicate: p.map(|r| r.as_predicate.iter()),
+							object: o.map(|r| r.as_object.iter()),
+						})
+					})
+				})
+				.unwrap_or(Matching::None)
+		}
+	}
+
+	pub fn matching_mut(&mut self, rdf_types::Triple(s, p, o): Pattern) -> MatchingMut<M> {
 		if s.is_none() && p.is_none() && o.is_none() {
 			MatchingMut::All(self.facts.iter_mut())
 		} else {
-			MatchingMut::Constrained {
-				facts: &mut self.facts,
-				subject: s.map(|s| self.resources[&s].as_subject.iter()),
-				predicate: p.map(|p| self.resources[&p].as_predicate.iter()),
-				object: o.map(|o| self.resources[&o].as_object.iter())
+			get_opt(&self.resources, s.as_ref())
+				.and_then(|s| {
+					get_opt(&self.resources, p.as_ref()).and_then(|p| {
+						get_opt(&self.resources, o.as_ref()).map(|o| MatchingMut::Constrained {
+							facts: &mut self.facts,
+							subject: s.map(|r| r.as_subject.iter()),
+							predicate: p.map(|r| r.as_predicate.iter()),
+							object: o.map(|r| r.as_object.iter()),
+						})
+					})
+				})
+				.unwrap_or(MatchingMut::None)
+		}
+	}
+
+	pub fn replace_id(
+		&mut self,
+		a: Id,
+		b: Id,
+		filter: impl Fn(&Fact<M>) -> Result<bool, Contradiction>,
+	) -> Result<(), Contradiction> {
+		for mut fact in self.remove_resource(b) {
+			fact.replace_id(a, b);
+			if filter(&fact)? {
+				self.insert(fact)?;
 			}
 		}
+
+		Ok(())
 	}
 }
 
@@ -245,14 +344,85 @@ impl<M> IntoIterator for Graph<M> {
 	}
 }
 
+pub enum ResourceFacts<'a, M> {
+	None,
+	Some {
+		facts: &'a Slab<Fact<M>>,
+		subject: Peekable<Copied<std::collections::btree_set::Iter<'a, usize>>>,
+		predicate: Peekable<Copied<std::collections::btree_set::Iter<'a, usize>>>,
+		object: Peekable<Copied<std::collections::btree_set::Iter<'a, usize>>>,
+	},
+}
+
+impl<'a, M> ResourceFacts<'a, M> {
+	pub fn is_empty(&self) -> bool {
+		match self {
+			Self::None => true,
+			Self::Some {
+				subject,
+				predicate,
+				object,
+				..
+			} => subject.len() == 0 && predicate.len() == 0 && object.len() == 0,
+		}
+	}
+}
+
+impl<'a, M> Iterator for ResourceFacts<'a, M> {
+	type Item = (usize, &'a Fact<M>);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		match self {
+			Self::None => None,
+			Self::Some {
+				facts,
+				subject,
+				predicate,
+				object,
+			} => {
+				let mut min = None;
+
+				if let Some(&s) = subject.peek() {
+					min = Some(min.map_or(s, |m| std::cmp::min(s, m)))
+				}
+
+				if let Some(&p) = predicate.peek() {
+					min = Some(min.map_or(p, |m| std::cmp::min(p, m)))
+				}
+
+				if let Some(&o) = object.peek() {
+					min = Some(min.map_or(o, |m| std::cmp::min(o, m)))
+				}
+
+				min.map(|m| {
+					if subject.peek().copied() == Some(m) {
+						subject.next();
+					}
+
+					if predicate.peek().copied() == Some(m) {
+						predicate.next();
+					}
+
+					if object.peek().copied() == Some(m) {
+						object.next();
+					}
+
+					(m, &facts[m])
+				})
+			}
+		}
+	}
+}
+
 pub enum Matching<'a, M> {
+	None,
 	All(slab::Iter<'a, Fact<M>>),
 	Constrained {
 		facts: &'a Slab<Fact<M>>,
 		subject: Option<std::collections::btree_set::Iter<'a, usize>>,
 		predicate: Option<std::collections::btree_set::Iter<'a, usize>>,
-		object: Option<std::collections::btree_set::Iter<'a, usize>>
-	}
+		object: Option<std::collections::btree_set::Iter<'a, usize>>,
+	},
 }
 
 impl<'a, M> Iterator for Matching<'a, M> {
@@ -260,12 +430,18 @@ impl<'a, M> Iterator for Matching<'a, M> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
+			Self::None => None,
 			Self::All(iter) => iter.next(),
-			Self::Constrained { facts, subject, predicate, object } => {
+			Self::Constrained {
+				facts,
+				subject,
+				predicate,
+				object,
+			} => {
 				enum State {
 					Subject,
 					Predicate,
-					Object
+					Object,
 				}
 
 				impl State {
@@ -273,7 +449,7 @@ impl<'a, M> Iterator for Matching<'a, M> {
 						match self {
 							Self::Subject => Self::Predicate,
 							Self::Predicate => Self::Object,
-							Self::Object => Self::Subject
+							Self::Object => Self::Subject,
 						}
 					}
 				}
@@ -286,9 +462,9 @@ impl<'a, M> Iterator for Matching<'a, M> {
 					let iter = match state {
 						State::Subject => subject.as_mut(),
 						State::Predicate => predicate.as_mut(),
-						State::Object => object.as_mut()
+						State::Object => object.as_mut(),
 					};
-	
+
 					if let Some(iter) = iter {
 						loop {
 							match iter.next().copied() {
@@ -299,7 +475,7 @@ impl<'a, M> Iterator for Matching<'a, M> {
 												candidate = Some(i);
 												count = 0
 											}
-											break
+											break;
 										}
 									}
 									None => {
@@ -307,7 +483,7 @@ impl<'a, M> Iterator for Matching<'a, M> {
 										break;
 									}
 								},
-								None => return None
+								None => return None,
 							}
 						}
 					}
@@ -323,13 +499,14 @@ impl<'a, M> Iterator for Matching<'a, M> {
 }
 
 pub enum MatchingMut<'a, M> {
+	None,
 	All(slab::IterMut<'a, Fact<M>>),
 	Constrained {
 		facts: &'a mut Slab<Fact<M>>,
 		subject: Option<std::collections::btree_set::Iter<'a, usize>>,
 		predicate: Option<std::collections::btree_set::Iter<'a, usize>>,
-		object: Option<std::collections::btree_set::Iter<'a, usize>>
-	}
+		object: Option<std::collections::btree_set::Iter<'a, usize>>,
+	},
 }
 
 impl<'a, M> Iterator for MatchingMut<'a, M> {
@@ -337,12 +514,18 @@ impl<'a, M> Iterator for MatchingMut<'a, M> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
+			Self::None => None,
 			Self::All(iter) => iter.next().map(|(i, s)| (i, FactMut(s))),
-			Self::Constrained { facts, subject, predicate, object } => {
+			Self::Constrained {
+				facts,
+				subject,
+				predicate,
+				object,
+			} => {
 				enum State {
 					Subject,
 					Predicate,
-					Object
+					Object,
 				}
 
 				impl State {
@@ -350,7 +533,7 @@ impl<'a, M> Iterator for MatchingMut<'a, M> {
 						match self {
 							Self::Subject => Self::Predicate,
 							Self::Predicate => Self::Object,
-							Self::Object => Self::Subject
+							Self::Object => Self::Subject,
 						}
 					}
 				}
@@ -363,9 +546,9 @@ impl<'a, M> Iterator for MatchingMut<'a, M> {
 					let iter = match state {
 						State::Subject => subject.as_mut(),
 						State::Predicate => predicate.as_mut(),
-						State::Object => object.as_mut()
+						State::Object => object.as_mut(),
 					};
-	
+
 					if let Some(iter) = iter {
 						loop {
 							match iter.next().copied() {
@@ -376,7 +559,7 @@ impl<'a, M> Iterator for MatchingMut<'a, M> {
 												candidate = Some(i);
 												count = 0
 											}
-											break
+											break;
 										}
 									}
 									None => {
@@ -384,7 +567,7 @@ impl<'a, M> Iterator for MatchingMut<'a, M> {
 										break;
 									}
 								},
-								None => return None
+								None => return None,
 							}
 						}
 					}
