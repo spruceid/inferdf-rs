@@ -1,14 +1,6 @@
 use hashbrown::{HashMap, HashSet};
 
-use crate::{Id, Context};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Term {
-	Variable(usize),
-	Id(Id)
-}
-
-pub type Pattern = rdf_types::Triple<Term, Term, Term>;
+use crate::Id;
 
 pub type StatementPattern = rdf_types::Triple<Term, SignedVerb, Term>;
 
@@ -61,46 +53,20 @@ impl Matching for Pattern {
 
 pub struct PatternSubstitution;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Conjunction {
-	bindings: usize,
-	factors: Vec<Factor>
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Factor {
-	assert: bool,
-	atom: Atom
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Path {
 	rule: usize,
 	pattern: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Atom {
-	Positive(Pattern),
-	Negative(Pattern)
-}
-
-impl Atom {
-	pub fn is_negative(&self) -> bool {
-		matches!(self, Self::Negative(_))
-	}
-
-	pub fn pattern(&self) -> Pattern {
-		match self {
-			Self::Positive(p) => *p,
-			Self::Negative(p) => *p
-		}
-	}
-}
-
+/// Induciton rules.
 pub struct Rules {
+	/// List of rules.
 	rules: Vec<Rule>,
+
+	/// Map a rule to ite unique index in `rules`.
 	map: HashMap<Rule, usize>,
+
 	paths: HashMap<Pattern, HashSet<Path>>
 }
 

@@ -2,7 +2,7 @@ pub mod builder;
 pub mod cause;
 pub mod dataset;
 pub mod interpretation;
-// pub mod rule;
+pub mod semantics;
 
 pub use cause::Cause;
 use derivative::Derivative;
