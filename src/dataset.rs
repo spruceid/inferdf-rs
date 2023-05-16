@@ -3,9 +3,7 @@ pub mod graph;
 pub use graph::{Contradiction, Graph};
 use hashbrown::HashMap;
 
-use crate::{Cause, Id, Quad, Triple};
-
-use self::graph::ReplaceId;
+use crate::{Cause, Id, Quad, Triple, ReplaceId};
 
 #[derive(Debug, Clone)]
 pub struct Fact<M> {

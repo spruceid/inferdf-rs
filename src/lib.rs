@@ -1,15 +1,18 @@
+mod utils;
 pub mod builder;
 pub mod cause;
+pub mod pattern;
 pub mod dataset;
 pub mod interpretation;
 pub mod semantics;
 
+pub use utils::*;
 pub use cause::Cause;
+pub use pattern::Pattern;
 use derivative::Derivative;
 use rdf_types::{BlankIdVocabulary, IriVocabulary};
 
 pub type Triple = rdf_types::Triple<Id, Id, Id>;
-pub type Pattern = rdf_types::Triple<Option<Id>, Option<Id>, Option<Id>>;
 pub type Quad = rdf_types::Quad<Id, Id, Id, Id>;
 
 pub trait Vocabulary: IriVocabulary + BlankIdVocabulary + LiteralVocabulary {}
@@ -265,7 +268,7 @@ pub trait TripleExt {
 
 impl TripleExt for Triple {
 	fn into_pattern(self) -> Pattern {
-		rdf_types::Triple(Some(self.0), Some(self.1), Some(self.2))
+		Pattern::from_triple(self)
 	}
 }
 

@@ -3,18 +3,38 @@ use std::hash::Hash;
 use derivative::Derivative;
 use hashbrown::{HashMap, HashSet};
 
-use crate::{Id, Triple};
+use crate::{Id, Triple, ReplaceId, Union, Bipolar, Signed};
 
 use super::{Pattern, AnySubjectGivenPredicate, AnySubjectAnyPredicate, AnySubject, GivenSubjectGivenPredicate, GivenSubjectAnyPredicate, GivenSubject};
 
+pub struct BipolarMap<V>(Bipolar<Map<V>>);
+
+impl<V: Eq + Hash> BipolarMap<V> {
+	pub fn insert(&mut self, Signed(sign, pattern): Signed<Pattern>, value: V) -> bool {
+		self.0.get_mut(sign).insert(pattern, value)
+	}
+}
+
+impl<V> BipolarMap<V> {
+	pub fn get(&self, Signed(sign, triple): Signed<Triple>) -> Values<V> {
+		self.0.get(sign).get(triple)
+	}
+}
+
+impl<V: Eq + Hash + ReplaceId> ReplaceId for BipolarMap<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.0.replace_id(a, b)
+	}
+}
+
 #[derive(Derivative)]
 #[derivative(Default(bound=""))]
-pub struct PatternMap<V> {
+pub struct Map<V> {
 	any: AnySubjectMap<V>,
 	given: HashMap<Id, GivenSubjectMap<V>>
 }
 
-impl<V: Eq + Hash> PatternMap<V> {
+impl<V: Eq + Hash> Map<V> {
 	pub fn insert(&mut self, pattern: Pattern, value: V) -> bool {
 		match pattern {
 			Pattern::AnySubject(rest) => self.any.insert(rest, value),
@@ -23,12 +43,19 @@ impl<V: Eq + Hash> PatternMap<V> {
 	}
 }
 
-impl<V> PatternMap<V> {
+impl<V> Map<V> {
 	pub fn get(&self, triple: Triple) -> Values<V> {
 		Values {
 			any: self.any.get(triple),
 			given: self.given.get(triple.subject()).map(|s| s.get(triple))
 		}
+	}
+}
+
+impl<V: Eq + Hash + ReplaceId> ReplaceId for Map<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.any.replace_id(a, b);
+		self.given.replace_id(a, b)
 	}
 }
 
@@ -69,6 +96,20 @@ impl<V> GivenSubjectMap<V> {
 			any: self.any.get(triple),
 			given: self.given.get(triple.predicate()).map(|p| p.get(triple))
 		}
+	}
+}
+
+impl<V: Eq + Hash> Union for GivenSubjectMap<V> {
+	fn union_with(&mut self, other: Self) {
+		self.any.union_with(other.any);
+		self.given.union_with(other.given);
+	}
+}
+
+impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectMap<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.any.replace_id(a, b);
+		self.given.replace_id(a, b)
 	}
 }
 
@@ -119,6 +160,22 @@ impl<V> GivenSubjectAnyPredicateMap<V> {
 	}
 }
 
+impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectAnyPredicateMap<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.any.replace_id(a, b);
+		self.same_as_predicate.replace_id(a, b);
+		self.given.replace_id(a, b)
+	}
+}
+
+impl<V: Eq + Hash> Union for GivenSubjectAnyPredicateMap<V> {
+	fn union_with(&mut self, other: Self) {
+		self.any.union_with(other.any);
+		self.same_as_predicate.union_with(other.same_as_predicate);
+		self.given.union_with(other.given)
+	}
+}
+
 pub struct GivenSubjectAnyPredicateValues<'a, V> {
 	any: hashbrown::hash_set::Iter<'a, V>,
 	same_as_predicate: Option<hashbrown::hash_set::Iter<'a, V>>,
@@ -159,6 +216,20 @@ impl<V> GivenSubjectGivenPredicateMap<V> {
 			any: self.any.iter(),
 			given: self.given.get(triple.object()).map(|o| o.iter())
 		}
+	}
+}
+
+impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectGivenPredicateMap<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.any.replace_id(a, b);
+		self.given.replace_id(a, b)
+	}
+}
+
+impl<V: Eq + Hash> Union for GivenSubjectGivenPredicateMap<V> {
+	fn union_with(&mut self, other: Self) {
+		self.any.union_with(other.any);
+		self.given.union_with(other.given)
 	}
 }
 
@@ -206,6 +277,22 @@ impl<V> AnySubjectMap<V> {
 			},
 			given: self.given.get(triple.predicate()).map(|p| p.get(triple))
 		}
+	}
+}
+
+impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectMap<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.any.replace_id(a, b);
+		self.same_as_subject.replace_id(a, b);
+		self.given.replace_id(a, b)
+	}
+}
+
+impl<V: Eq + Hash> Union for AnySubjectMap<V> {
+	fn union_with(&mut self, other: Self) {
+		self.any.union_with(other.any);
+		self.same_as_subject.union_with(other.same_as_subject);
+		self.given.union_with(other.given)
 	}
 }
 
@@ -264,6 +351,24 @@ impl<V> AnySubjectAnyPredicateMap<V> {
 	}
 }
 
+impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectAnyPredicateMap<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.any.replace_id(a, b);
+		self.same_as_subject.replace_id(a, b);
+		self.same_as_predicate.replace_id(a, b);
+		self.given.replace_id(a, b)
+	}
+}
+
+impl<V: Eq + Hash> Union for AnySubjectAnyPredicateMap<V> {
+	fn union_with(&mut self, other: Self) {
+		self.any.union_with(other.any);
+		self.same_as_subject.union_with(other.same_as_subject);
+		self.same_as_predicate.union_with(other.same_as_predicate);
+		self.given.union_with(other.given)
+	}
+}
+
 pub struct AnySubjectAnyPredicateValues<'a, V> {
 	any: hashbrown::hash_set::Iter<'a, V>,
 	same_as_subject: Option<hashbrown::hash_set::Iter<'a, V>>,
@@ -314,6 +419,22 @@ impl<V> AnySubjectGivenPredicateMap<V> {
 			},
 			given: self.given.get(triple.object()).map(|o| o.iter())
 		}
+	}
+}
+
+impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectGivenPredicateMap<V> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.any.replace_id(a, b);
+		self.same_as_subject.replace_id(a, b);
+		self.given.replace_id(a, b)
+	}
+}
+
+impl<V: Eq + Hash> Union for AnySubjectGivenPredicateMap<V> {
+	fn union_with(&mut self, other: Self) {
+		self.any.union_with(other.any);
+		self.same_as_subject.union_with(other.same_as_subject);
+		self.given.union_with(other.given)
 	}
 }
 

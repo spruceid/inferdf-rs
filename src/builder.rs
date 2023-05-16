@@ -3,9 +3,9 @@ use std::hash::Hash;
 use hashbrown::HashMap;
 
 use crate::{
-	dataset::{self, graph::ReplaceId, Dataset},
+	dataset::{self, Dataset},
 	interpretation::{self, CompositeInterpretation, Interpretation},
-	Cause, Id, Triple, Vocabulary,
+	Cause, Id, Triple, Vocabulary, ReplaceId,
 };
 
 pub enum Contradiction {

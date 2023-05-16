@@ -8,7 +8,7 @@ use derivative::Derivative;
 use hashbrown::{Equivalent, HashMap};
 use slab::Slab;
 
-use crate::{Cause, Id, Pattern, Quad, Triple, TripleExt};
+use crate::{Cause, Id, Triple, ReplaceId, Pattern, TripleExt};
 
 #[derive(Derivative, Debug, Clone)]
 #[derivative(Default(bound = ""))]
@@ -74,57 +74,9 @@ impl<'a, M> FactMut<'a, M> {
 	}
 }
 
-pub trait ReplaceId {
-	/// Replace id `a` with `b`.
-	fn replace_id(&mut self, a: Id, b: Id);
-}
-
-impl<T: ReplaceId> ReplaceId for Vec<T> {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		for t in self {
-			t.replace_id(a, b)
-		}
-	}
-}
-
 impl<M> ReplaceId for Fact<M> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		self.triple.replace_id(a, b);
-	}
-}
-
-impl ReplaceId for Triple {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		self.subject_mut().replace_id(a, b);
-		self.predicate_mut().replace_id(a, b);
-		self.object_mut().replace_id(a, b);
-	}
-}
-
-impl ReplaceId for Quad {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		self.subject_mut().replace_id(a, b);
-		self.predicate_mut().replace_id(a, b);
-		self.object_mut().replace_id(a, b);
-		if let Some(g) = self.graph_mut() {
-			g.replace_id(a, b);
-		}
-	}
-}
-
-impl ReplaceId for Option<Id> {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		if let Some(id) = self {
-			id.replace_id(a, b)
-		}
-	}
-}
-
-impl ReplaceId for Id {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		if *self == a {
-			*self = b
-		}
 	}
 }
 
@@ -280,7 +232,11 @@ impl<M> Graph<M> {
 		}
 	}
 
-	pub fn matching(&self, rdf_types::Triple(s, p, o): Pattern) -> Matching<M> {
+	pub fn matching(&self, pattern: Pattern) -> Matching<M> {
+		let s = pattern.subject().id();
+		let p = pattern.predicate().id();
+		let o = pattern.object().id();
+
 		if s.is_none() && p.is_none() && o.is_none() {
 			Matching::All(self.facts.iter())
 		} else {
@@ -299,7 +255,11 @@ impl<M> Graph<M> {
 		}
 	}
 
-	pub fn matching_mut(&mut self, rdf_types::Triple(s, p, o): Pattern) -> MatchingMut<M> {
+	pub fn matching_mut(&mut self, pattern: Pattern) -> MatchingMut<M> {
+		let s = pattern.subject().id();
+		let p = pattern.predicate().id();
+		let o = pattern.object().id();
+
 		if s.is_none() && p.is_none() && o.is_none() {
 			MatchingMut::All(self.facts.iter_mut())
 		} else {
