@@ -1,8 +1,9 @@
 use std::hash::Hash;
 
 use hashbrown::{HashMap, HashSet};
+use locspan::Meta;
 
-use crate::{Id, Triple, Quad};
+use crate::{Id, Quad, Signed, Triple};
 
 pub trait ReplaceId {
 	/// Replace id `a` with `b`.
@@ -22,6 +23,12 @@ impl ReplaceId for Option<Id> {
 		if let Some(id) = self {
 			id.replace_id(a, b)
 		}
+	}
+}
+
+impl<T: ReplaceId, M> ReplaceId for Meta<T, M> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.value_mut().replace_id(a, b)
 	}
 }
 
@@ -47,15 +54,13 @@ impl<T: ReplaceId + super::Union> ReplaceId for HashMap<Id, T> {
 		for t in self.values_mut() {
 			t.replace_id(a, b);
 		}
-		
+
 		if let Some(t) = self.remove(&a) {
 			match self.entry(b) {
 				hashbrown::hash_map::Entry::Vacant(entry) => {
 					entry.insert(t);
 				}
-				hashbrown::hash_map::Entry::Occupied(mut entry) => {
-					entry.get_mut().union_with(t)
-				}
+				hashbrown::hash_map::Entry::Occupied(mut entry) => entry.get_mut().union_with(t),
 			}
 		}
 	}
@@ -77,5 +82,11 @@ impl ReplaceId for Quad {
 		if let Some(g) = self.graph_mut() {
 			g.replace_id(a, b);
 		}
+	}
+}
+
+impl<T: ReplaceId> ReplaceId for Signed<T> {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		self.value_mut().replace_id(a, b)
 	}
 }

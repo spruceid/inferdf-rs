@@ -1,54 +1,43 @@
 pub mod graph;
 
+use derivative::Derivative;
 pub use graph::{Contradiction, Graph};
 use hashbrown::HashMap;
+use locspan::Meta;
 
-use crate::{Cause, Id, Quad, Triple, ReplaceId};
+use crate::{pattern, Id, Quad, ReplaceId, Sign, Signed, Triple};
 
-#[derive(Debug, Clone)]
-pub struct Fact<M> {
-	pub quad: Quad,
-	pub positive: bool,
-	pub cause: Cause<M>,
+use self::graph::FactWithGraph;
+
+pub type Fact<M> = Meta<Signed<Quad>, M>;
+
+pub trait IntoGraphFact<M> {
+	fn into_graph_fact(self) -> (graph::Fact<M>, Option<Id>);
 }
 
-impl<M> Fact<M> {
-	pub fn new(quad: Quad, positive: bool, cause: Cause<M>) -> Self {
-		Self {
-			quad,
-			positive,
-			cause,
-		}
-	}
-
-	pub fn triple(&self) -> Triple {
-		self.quad.into_triple().0
-	}
-
-	pub fn into_graph_fact(self) -> (graph::Fact<M>, Option<Id>) {
-		let (triple, g) = self.quad.into_triple();
-		(graph::Fact::new(triple, self.positive, self.cause), g)
+impl<M> IntoGraphFact<M> for Meta<Signed<Quad>, M> {
+	fn into_graph_fact(self) -> (graph::Fact<M>, Option<Id>) {
+		let Meta(Signed(sign, quad), meta) = self;
+		let (triple, g) = quad.into_triple();
+		(Meta(Signed(sign, triple), meta), g)
 	}
 }
 
-impl<M> ReplaceId for Fact<M> {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		self.quad.replace_id(a, b)
-	}
-}
-
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct Dataset<M> {
 	default_graph: Graph<M>,
 	named_graphs: HashMap<Id, Graph<M>>,
 }
 
 impl<M> Dataset<M> {
-	pub fn contains_triple(&self, triple: Triple, positive: bool) -> bool {
-		self.default_graph.contains(triple, positive)
-			|| self
-				.named_graphs
-				.values()
-				.any(|g| g.contains(triple, positive))
+	pub fn new() -> Self {
+		Self::default()
+	}
+
+	pub fn contains_triple(&self, triple: Triple, sign: Sign) -> bool {
+		self.default_graph.contains(triple, sign)
+			|| self.named_graphs.values().any(|g| g.contains(triple, sign))
 	}
 
 	pub fn find_triple(&self, triple: Triple) -> Option<(Option<Id>, usize, &graph::Fact<M>)> {
@@ -98,7 +87,10 @@ impl<M> Dataset<M> {
 		self.named_graphs.insert(id, graph)
 	}
 
-	pub fn insert(&mut self, fact: Fact<M>) -> Result<(Option<Id>, usize, bool), Contradiction> {
+	pub fn insert(
+		&mut self,
+		fact: Meta<Signed<Quad>, M>,
+	) -> Result<(Option<Id>, usize, bool), Contradiction> {
 		let (fact, g) = fact.into_graph_fact();
 		match g {
 			None => {
@@ -146,6 +138,27 @@ impl<M> Dataset<M> {
 		}
 
 		ResourceFacts { list }
+	}
+
+	pub fn matching(&self, pattern: pattern::Canonical) -> Matching<M> {
+		Matching {
+			pattern,
+			graphs: self.graphs(),
+			current: None,
+			sign: None,
+		}
+	}
+
+	pub fn signed_matching(
+		&self,
+		Signed(sign, pattern): Signed<pattern::Canonical>,
+	) -> Matching<M> {
+		Matching {
+			pattern,
+			graphs: self.graphs(),
+			current: None,
+			sign: Some(sign),
+		}
 	}
 }
 
@@ -197,7 +210,7 @@ impl<'a, M> Iterator for ResourceFacts<'a, M> {
 	fn next(&mut self) -> Option<Self::Item> {
 		while let Some((g, top)) = self.list.last_mut() {
 			match top.next() {
-				Some((_, fact)) => return Some(fact.with_graph(*g)),
+				Some((_, fact)) => return Some(fact.borrow_metadata().with_graph(*g)),
 				None => {
 					self.list.pop();
 				}
@@ -205,5 +218,51 @@ impl<'a, M> Iterator for ResourceFacts<'a, M> {
 		}
 
 		None
+	}
+}
+
+pub struct Matching<'a, M> {
+	pattern: pattern::Canonical,
+	graphs: Graphs<'a, M>,
+	current: Option<(Option<Id>, graph::Matching<'a, M>)>,
+	sign: Option<Sign>,
+}
+
+impl<'a, M> Matching<'a, M> {
+	pub fn into_quads(self) -> MatchingQuads<'a, M> {
+		MatchingQuads(self)
+	}
+}
+
+impl<'a, M> Iterator for Matching<'a, M> {
+	type Item = (Option<Id>, usize, &'a graph::Fact<M>);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match self.current.as_mut() {
+				Some((g, m)) => match m.next() {
+					Some((i, triple)) => break Some((*g, i, triple)),
+					None => self.current = None,
+				},
+				None => match self.graphs.next() {
+					Some((g, graph)) => {
+						self.current = Some((g, graph.full_matching(self.pattern, self.sign)))
+					}
+					None => break None,
+				},
+			}
+		}
+	}
+}
+
+pub struct MatchingQuads<'a, M>(Matching<'a, M>);
+
+impl<'a, M> Iterator for MatchingQuads<'a, M> {
+	type Item = Quad;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0
+			.next()
+			.map(|(g, _, Meta(Signed(_, triple), _))| triple.into_quad(g))
 	}
 }

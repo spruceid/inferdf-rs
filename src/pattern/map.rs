@@ -3,14 +3,19 @@ use std::hash::Hash;
 use derivative::Derivative;
 use hashbrown::{HashMap, HashSet};
 
-use crate::{Id, Triple, ReplaceId, Union, Bipolar, Signed};
+use crate::{Bipolar, Id, ReplaceId, Signed, Triple, Union};
 
-use super::{Pattern, AnySubjectGivenPredicate, AnySubjectAnyPredicate, AnySubject, GivenSubjectGivenPredicate, GivenSubjectAnyPredicate, GivenSubject};
+use super::{
+	AnySubject, AnySubjectAnyPredicate, AnySubjectGivenPredicate, Canonical, GivenSubject,
+	GivenSubjectAnyPredicate, GivenSubjectGivenPredicate,
+};
 
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct BipolarMap<V>(Bipolar<Map<V>>);
 
 impl<V: Eq + Hash> BipolarMap<V> {
-	pub fn insert(&mut self, Signed(sign, pattern): Signed<Pattern>, value: V) -> bool {
+	pub fn insert(&mut self, Signed(sign, pattern): Signed<Canonical>, value: V) -> bool {
 		self.0.get_mut(sign).insert(pattern, value)
 	}
 }
@@ -27,18 +32,20 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for BipolarMap<V> {
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound=""))]
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct Map<V> {
 	any: AnySubjectMap<V>,
-	given: HashMap<Id, GivenSubjectMap<V>>
+	given: HashMap<Id, GivenSubjectMap<V>>,
 }
 
 impl<V: Eq + Hash> Map<V> {
-	pub fn insert(&mut self, pattern: Pattern, value: V) -> bool {
+	pub fn insert(&mut self, pattern: Canonical, value: V) -> bool {
 		match pattern {
-			Pattern::AnySubject(rest) => self.any.insert(rest, value),
-			Pattern::GivenSubject(id, rest) => self.given.entry(id).or_default().insert(rest, value)
+			Canonical::AnySubject(rest) => self.any.insert(rest, value),
+			Canonical::GivenSubject(id, rest) => {
+				self.given.entry(id).or_default().insert(rest, value)
+			}
 		}
 	}
 }
@@ -47,7 +54,7 @@ impl<V> Map<V> {
 	pub fn get(&self, triple: Triple) -> Values<V> {
 		Values {
 			any: self.any.get(triple),
-			given: self.given.get(triple.subject()).map(|s| s.get(triple))
+			given: self.given.get(triple.subject()).map(|s| s.get(triple)),
 		}
 	}
 }
@@ -61,31 +68,33 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for Map<V> {
 
 pub struct Values<'a, V> {
 	any: AnySubjectValues<'a, V>,
-	given: Option<GivenSubjectValues<'a, V>>
+	given: Option<GivenSubjectValues<'a, V>>,
 }
 
 impl<'a, V> Iterator for Values<'a, V> {
 	type Item = &'a V;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.any.next().or_else(|| {
-			self.given.as_mut().and_then(|i| i.next())
-		})
+		self.any
+			.next()
+			.or_else(|| self.given.as_mut().and_then(|i| i.next()))
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound=""))]
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct GivenSubjectMap<V> {
 	any: GivenSubjectAnyPredicateMap<V>,
-	given: HashMap<Id, GivenSubjectGivenPredicateMap<V>>
+	given: HashMap<Id, GivenSubjectGivenPredicateMap<V>>,
 }
 
 impl<V: Eq + Hash> GivenSubjectMap<V> {
 	pub fn insert(&mut self, pattern: GivenSubject, value: V) -> bool {
 		match pattern {
 			GivenSubject::AnyPredicate(rest) => self.any.insert(rest, value),
-			GivenSubject::GivenPredicate(id, rest) => self.given.entry(id).or_default().insert(rest, value)
+			GivenSubject::GivenPredicate(id, rest) => {
+				self.given.entry(id).or_default().insert(rest, value)
+			}
 		}
 	}
 }
@@ -94,7 +103,7 @@ impl<V> GivenSubjectMap<V> {
 	pub fn get(&self, triple: Triple) -> GivenSubjectValues<V> {
 		GivenSubjectValues {
 			any: self.any.get(triple),
-			given: self.given.get(triple.predicate()).map(|p| p.get(triple))
+			given: self.given.get(triple.predicate()).map(|p| p.get(triple)),
 		}
 	}
 }
@@ -115,25 +124,25 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectMap<V> {
 
 pub struct GivenSubjectValues<'a, V> {
 	any: GivenSubjectAnyPredicateValues<'a, V>,
-	given: Option<GivenSubjectGivenPredicateValues<'a, V>>
+	given: Option<GivenSubjectGivenPredicateValues<'a, V>>,
 }
 
 impl<'a, V> Iterator for GivenSubjectValues<'a, V> {
 	type Item = &'a V;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.any.next().or_else(|| {
-			self.given.as_mut().and_then(|i| i.next())
-		})
+		self.any
+			.next()
+			.or_else(|| self.given.as_mut().and_then(|i| i.next()))
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound=""))]
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct GivenSubjectAnyPredicateMap<V> {
 	any: HashSet<V>,
 	same_as_predicate: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>
+	given: HashMap<Id, HashSet<V>>,
 }
 
 impl<V: Eq + Hash> GivenSubjectAnyPredicateMap<V> {
@@ -141,7 +150,9 @@ impl<V: Eq + Hash> GivenSubjectAnyPredicateMap<V> {
 		match pattern {
 			GivenSubjectAnyPredicate::AnyObject => self.any.insert(value),
 			GivenSubjectAnyPredicate::SameAsPredicate => self.same_as_predicate.insert(value),
-			GivenSubjectAnyPredicate::GivenObject(id) => self.given.entry(id).or_default().insert(value)
+			GivenSubjectAnyPredicate::GivenObject(id) => {
+				self.given.entry(id).or_default().insert(value)
+			}
 		}
 	}
 }
@@ -155,7 +166,7 @@ impl<V> GivenSubjectAnyPredicateMap<V> {
 			} else {
 				None
 			},
-			given: self.given.get(triple.object()).map(|o| o.iter())
+			given: self.given.get(triple.object()).map(|o| o.iter()),
 		}
 	}
 }
@@ -179,33 +190,34 @@ impl<V: Eq + Hash> Union for GivenSubjectAnyPredicateMap<V> {
 pub struct GivenSubjectAnyPredicateValues<'a, V> {
 	any: hashbrown::hash_set::Iter<'a, V>,
 	same_as_predicate: Option<hashbrown::hash_set::Iter<'a, V>>,
-	given: Option<hashbrown::hash_set::Iter<'a, V>>
+	given: Option<hashbrown::hash_set::Iter<'a, V>>,
 }
 
 impl<'a, V> Iterator for GivenSubjectAnyPredicateValues<'a, V> {
 	type Item = &'a V;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.any.next().or_else(|| {
-			self.same_as_predicate.as_mut().and_then(|i| i.next())
-		}).or_else(|| {
-			self.given.as_mut().and_then(|i| i.next())
-		})
+		self.any
+			.next()
+			.or_else(|| self.same_as_predicate.as_mut().and_then(|i| i.next()))
+			.or_else(|| self.given.as_mut().and_then(|i| i.next()))
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound=""))]
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct GivenSubjectGivenPredicateMap<V> {
 	any: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>
+	given: HashMap<Id, HashSet<V>>,
 }
 
 impl<V: Eq + Hash> GivenSubjectGivenPredicateMap<V> {
 	pub fn insert(&mut self, pattern: GivenSubjectGivenPredicate, value: V) -> bool {
 		match pattern {
 			GivenSubjectGivenPredicate::AnyObject => self.any.insert(value),
-			GivenSubjectGivenPredicate::GivenObject(id) => self.given.entry(id).or_default().insert(value)
+			GivenSubjectGivenPredicate::GivenObject(id) => {
+				self.given.entry(id).or_default().insert(value)
+			}
 		}
 	}
 }
@@ -214,7 +226,7 @@ impl<V> GivenSubjectGivenPredicateMap<V> {
 	pub fn get(&self, triple: Triple) -> GivenSubjectGivenPredicateValues<V> {
 		GivenSubjectGivenPredicateValues {
 			any: self.any.iter(),
-			given: self.given.get(triple.object()).map(|o| o.iter())
+			given: self.given.get(triple.object()).map(|o| o.iter()),
 		}
 	}
 }
@@ -235,25 +247,25 @@ impl<V: Eq + Hash> Union for GivenSubjectGivenPredicateMap<V> {
 
 pub struct GivenSubjectGivenPredicateValues<'a, V> {
 	any: hashbrown::hash_set::Iter<'a, V>,
-	given: Option<hashbrown::hash_set::Iter<'a, V>>
+	given: Option<hashbrown::hash_set::Iter<'a, V>>,
 }
 
 impl<'a, V> Iterator for GivenSubjectGivenPredicateValues<'a, V> {
 	type Item = &'a V;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.any.next().or_else(|| {
-			self.given.as_mut().and_then(|i| i.next())
-		})
+		self.any
+			.next()
+			.or_else(|| self.given.as_mut().and_then(|i| i.next()))
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound=""))]
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct AnySubjectMap<V> {
 	any: AnySubjectAnyPredicateMap<V>,
 	same_as_subject: AnySubjectGivenPredicateMap<V>,
-	given: HashMap<Id, AnySubjectGivenPredicateMap<V>>
+	given: HashMap<Id, AnySubjectGivenPredicateMap<V>>,
 }
 
 impl<V: Eq + Hash> AnySubjectMap<V> {
@@ -261,7 +273,9 @@ impl<V: Eq + Hash> AnySubjectMap<V> {
 		match pattern {
 			AnySubject::AnyPredicate(rest) => self.any.insert(rest, value),
 			AnySubject::SameAsSubject(rest) => self.same_as_subject.insert(rest, value),
-			AnySubject::GivenPredicate(id, rest) => self.given.entry(id).or_default().insert(rest, value)
+			AnySubject::GivenPredicate(id, rest) => {
+				self.given.entry(id).or_default().insert(rest, value)
+			}
 		}
 	}
 }
@@ -275,7 +289,7 @@ impl<V> AnySubjectMap<V> {
 			} else {
 				None
 			},
-			given: self.given.get(triple.predicate()).map(|p| p.get(triple))
+			given: self.given.get(triple.predicate()).map(|p| p.get(triple)),
 		}
 	}
 }
@@ -299,35 +313,38 @@ impl<V: Eq + Hash> Union for AnySubjectMap<V> {
 pub struct AnySubjectValues<'a, V> {
 	any: AnySubjectAnyPredicateValues<'a, V>,
 	same_as_subject: Option<AnySubjectGivenPredicateValues<'a, V>>,
-	given: Option<AnySubjectGivenPredicateValues<'a, V>>
+	given: Option<AnySubjectGivenPredicateValues<'a, V>>,
 }
 
 impl<'a, V> Iterator for AnySubjectValues<'a, V> {
 	type Item = &'a V;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.any.next().or_else(|| {
-			self.same_as_subject.as_mut().and_then(|i| i.next())
-		}).or_else(|| {
-			self.given.as_mut().and_then(|i| i.next())
-		})
+		self.any
+			.next()
+			.or_else(|| self.same_as_subject.as_mut().and_then(|i| i.next()))
+			.or_else(|| self.given.as_mut().and_then(|i| i.next()))
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound=""))]
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct AnySubjectAnyPredicateMap<V> {
 	any: HashSet<V>,
 	same_as_subject: HashSet<V>,
 	same_as_predicate: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>
+	given: HashMap<Id, HashSet<V>>,
 }
 
 impl<V: Eq + Hash> AnySubjectAnyPredicateMap<V> {
 	pub fn insert(&mut self, pattern: AnySubjectAnyPredicate, value: V) -> bool {
 		match pattern {
 			AnySubjectAnyPredicate::AnyObject => self.any.insert(value),
-			AnySubjectAnyPredicate::GivenObject(id) => self.given.entry(id).or_default().insert(value)
+			AnySubjectAnyPredicate::SameAsSubject => self.same_as_subject.insert(value),
+			AnySubjectAnyPredicate::SameAsPredicate => self.same_as_predicate.insert(value),
+			AnySubjectAnyPredicate::GivenObject(id) => {
+				self.given.entry(id).or_default().insert(value)
+			}
 		}
 	}
 }
@@ -346,7 +363,7 @@ impl<V> AnySubjectAnyPredicateMap<V> {
 			} else {
 				None
 			},
-			given: self.given.get(triple.object()).map(|o| o.iter())
+			given: self.given.get(triple.object()).map(|o| o.iter()),
 		}
 	}
 }
@@ -373,29 +390,27 @@ pub struct AnySubjectAnyPredicateValues<'a, V> {
 	any: hashbrown::hash_set::Iter<'a, V>,
 	same_as_subject: Option<hashbrown::hash_set::Iter<'a, V>>,
 	same_as_predicate: Option<hashbrown::hash_set::Iter<'a, V>>,
-	given: Option<hashbrown::hash_set::Iter<'a, V>>
+	given: Option<hashbrown::hash_set::Iter<'a, V>>,
 }
 
 impl<'a, V> Iterator for AnySubjectAnyPredicateValues<'a, V> {
 	type Item = &'a V;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.any.next().or_else(|| {
-			self.same_as_subject.as_mut().and_then(|i| i.next())
-		}).or_else(|| {
-			self.same_as_predicate.as_mut().and_then(|i| i.next())
-		}).or_else(|| {
-			self.given.as_mut().and_then(|i| i.next())
-		})
+		self.any
+			.next()
+			.or_else(|| self.same_as_subject.as_mut().and_then(|i| i.next()))
+			.or_else(|| self.same_as_predicate.as_mut().and_then(|i| i.next()))
+			.or_else(|| self.given.as_mut().and_then(|i| i.next()))
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound=""))]
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct AnySubjectGivenPredicateMap<V> {
 	any: HashSet<V>,
 	same_as_subject: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>
+	given: HashMap<Id, HashSet<V>>,
 }
 
 impl<V: Eq + Hash> AnySubjectGivenPredicateMap<V> {
@@ -403,7 +418,9 @@ impl<V: Eq + Hash> AnySubjectGivenPredicateMap<V> {
 		match pattern {
 			AnySubjectGivenPredicate::AnyObject => self.any.insert(value),
 			AnySubjectGivenPredicate::SameAsSubject => self.same_as_subject.insert(value),
-			AnySubjectGivenPredicate::GivenObject(id) => self.given.entry(id).or_default().insert(value)
+			AnySubjectGivenPredicate::GivenObject(id) => {
+				self.given.entry(id).or_default().insert(value)
+			}
 		}
 	}
 }
@@ -417,7 +434,7 @@ impl<V> AnySubjectGivenPredicateMap<V> {
 			} else {
 				None
 			},
-			given: self.given.get(triple.object()).map(|o| o.iter())
+			given: self.given.get(triple.object()).map(|o| o.iter()),
 		}
 	}
 }
@@ -441,17 +458,16 @@ impl<V: Eq + Hash> Union for AnySubjectGivenPredicateMap<V> {
 pub struct AnySubjectGivenPredicateValues<'a, V> {
 	any: hashbrown::hash_set::Iter<'a, V>,
 	same_as_subject: Option<hashbrown::hash_set::Iter<'a, V>>,
-	given: Option<hashbrown::hash_set::Iter<'a, V>>
+	given: Option<hashbrown::hash_set::Iter<'a, V>>,
 }
 
 impl<'a, V> Iterator for AnySubjectGivenPredicateValues<'a, V> {
 	type Item = &'a V;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.any.next().or_else(|| {
-			self.same_as_subject.as_mut().and_then(|i| i.next())
-		}).or_else(|| {
-			self.given.as_mut().and_then(|i| i.next())
-		})
+		self.any
+			.next()
+			.or_else(|| self.same_as_subject.as_mut().and_then(|i| i.next()))
+			.or_else(|| self.given.as_mut().and_then(|i| i.next()))
 	}
 }

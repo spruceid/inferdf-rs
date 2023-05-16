@@ -6,9 +6,23 @@ use std::{
 
 use derivative::Derivative;
 use hashbrown::{Equivalent, HashMap};
+use locspan::Meta;
 use slab::Slab;
 
-use crate::{Cause, Id, Triple, ReplaceId, Pattern, TripleExt};
+use crate::{pattern, Id, ReplaceId, Sign, Signed, Triple, TripleExt};
+
+pub type Fact<M> = Meta<Signed<Triple>, M>;
+
+pub trait FactWithGraph<M> {
+	fn with_graph(self, g: Option<Id>) -> super::Fact<M>;
+}
+
+impl<M> FactWithGraph<M> for Fact<M> {
+	fn with_graph(self, g: Option<Id>) -> super::Fact<M> {
+		let Meta(Signed(sign, triple), meta) = self;
+		Meta(Signed(sign, triple.into_quad(g)), meta)
+	}
+}
 
 #[derive(Derivative, Debug, Clone)]
 #[derivative(Default(bound = ""))]
@@ -30,57 +44,6 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct Fact<M> {
-	pub triple: Triple,
-	pub positive: bool,
-	pub cause: Cause<M>,
-}
-
-impl<M> Fact<M> {
-	pub fn new(triple: Triple, positive: bool, cause: Cause<M>) -> Self {
-		Self {
-			triple,
-			positive,
-			cause,
-		}
-	}
-
-	pub fn with_graph(&self, g: Option<Id>) -> super::Fact<&M> {
-		super::Fact::new(self.triple.into_quad(g), self.positive, self.cause.as_ref())
-	}
-
-	pub fn into_with_graph(self, g: Option<Id>) -> super::Fact<M> {
-		super::Fact::new(self.triple.into_quad(g), self.positive, self.cause)
-	}
-}
-
-pub struct FactMut<'a, M>(&'a mut Fact<M>);
-
-impl<'a, M> FactMut<'a, M> {
-	pub fn triple(&self) -> Triple {
-		self.0.triple
-	}
-
-	pub fn is_positive(&self) -> bool {
-		self.0.positive
-	}
-
-	pub fn cause(&self) -> &Cause<M> {
-		&self.0.cause
-	}
-
-	pub fn cause_mut(&mut self) -> &mut Cause<M> {
-		&mut self.0.cause
-	}
-}
-
-impl<M> ReplaceId for Fact<M> {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		self.triple.replace_id(a, b);
-	}
-}
-
-#[derive(Debug, Clone)]
 pub struct Resource {
 	as_subject: BTreeSet<usize>,
 	as_predicate: BTreeSet<usize>,
@@ -90,9 +53,9 @@ pub struct Resource {
 pub struct Contradiction(pub Triple);
 
 impl<M> Graph<M> {
-	pub fn contains(&self, triple: Triple, positive: bool) -> bool {
+	pub fn contains(&self, triple: Triple, sign: Sign) -> bool {
 		self.find_triple(triple)
-			.map(|(_, f)| f.positive == positive)
+			.map(|(_, f)| f.sign() == sign)
 			.unwrap_or(false)
 	}
 
@@ -100,18 +63,18 @@ impl<M> Graph<M> {
 		self.facts.get(i)
 	}
 
-	pub fn insert(&mut self, fact: Fact<M>) -> Result<(usize, bool), Contradiction> {
-		match self.find_triple_mut(fact.triple) {
+	pub fn insert(&mut self, Meta(fact, meta): Fact<M>) -> Result<(usize, bool), Contradiction> {
+		match self.find_triple(*fact.value()) {
 			Some((i, current_fact)) => {
-				if current_fact.is_positive() == fact.positive {
+				if current_fact.sign() == fact.sign() {
 					Ok((i, false))
 				} else {
-					Err(Contradiction(fact.triple))
+					Err(Contradiction(*fact.value()))
 				}
 			}
 			None => {
-				let triple = fact.triple;
-				let i = self.facts.insert(fact);
+				let triple = *fact.value();
+				let i = self.facts.insert(Meta(fact, meta));
 				self.resources
 					.get_mut(triple.subject())
 					.unwrap()
@@ -179,11 +142,11 @@ impl<M> Graph<M> {
 	}
 
 	pub fn remove_positive_triple(&mut self, triple: Triple) -> Option<Fact<M>> {
-		self.remove_triple_with(triple, |s| s.positive)
+		self.remove_triple_with(triple, |s| s.is_positive())
 	}
 
 	pub fn remove_negative_triple(&mut self, triple: Triple) -> Option<Fact<M>> {
-		self.remove_triple_with(triple, |s| !s.positive)
+		self.remove_triple_with(triple, |s| s.is_negative())
 	}
 
 	pub fn remove_resource(&mut self, id: Id) -> Vec<Fact<M>> {
@@ -213,11 +176,14 @@ impl<M> Graph<M> {
 	}
 
 	pub fn find_triple(&self, triple: Triple) -> Option<(usize, &Fact<M>)> {
-		self.matching(triple.into_pattern()).next()
+		self.matching(triple.into_pattern().into()).next()
 	}
 
-	pub fn find_triple_mut(&mut self, triple: Triple) -> Option<(usize, FactMut<M>)> {
-		self.matching_mut(triple.into_pattern()).next()
+	pub fn find_triple_mut(
+		&mut self,
+		triple: Triple,
+	) -> Option<(usize, Meta<&Signed<Triple>, &mut M>)> {
+		self.matching_mut(triple.into_pattern().into()).next()
 	}
 
 	pub fn resource_facts(&self, id: Id) -> ResourceFacts<M> {
@@ -232,18 +198,18 @@ impl<M> Graph<M> {
 		}
 	}
 
-	pub fn matching(&self, pattern: Pattern) -> Matching<M> {
+	pub fn full_matching(&self, pattern: pattern::Canonical, sign: Option<Sign>) -> Matching<M> {
 		let s = pattern.subject().id();
 		let p = pattern.predicate().id();
 		let o = pattern.object().id();
 
-		if s.is_none() && p.is_none() && o.is_none() {
-			Matching::All(self.facts.iter())
+		let inner = if s.is_none() && p.is_none() && o.is_none() {
+			InnerMatching::All(self.facts.iter())
 		} else {
 			get_opt(&self.resources, s.as_ref())
 				.and_then(|s| {
 					get_opt(&self.resources, p.as_ref()).and_then(|p| {
-						get_opt(&self.resources, o.as_ref()).map(|o| Matching::Constrained {
+						get_opt(&self.resources, o.as_ref()).map(|o| InnerMatching::Constrained {
 							facts: &self.facts,
 							subject: s.map(|r| r.as_subject.iter()),
 							predicate: p.map(|r| r.as_predicate.iter()),
@@ -251,11 +217,31 @@ impl<M> Graph<M> {
 						})
 					})
 				})
-				.unwrap_or(Matching::None)
+				.unwrap_or(InnerMatching::None)
+		};
+
+		Matching {
+			inner,
+			constraints: MatchingConstraints {
+				predicate: pattern.predicate(),
+				object: pattern.object(),
+				sign,
+			},
 		}
 	}
 
-	pub fn matching_mut(&mut self, pattern: Pattern) -> MatchingMut<M> {
+	pub fn matching(&self, pattern: pattern::Canonical) -> Matching<M> {
+		self.full_matching(pattern, None)
+	}
+
+	pub fn signed_matching(
+		&self,
+		Signed(sign, pattern): Signed<pattern::Canonical>,
+	) -> Matching<M> {
+		self.full_matching(pattern, Some(sign))
+	}
+
+	pub fn matching_mut(&mut self, pattern: pattern::Canonical) -> MatchingMut<M> {
 		let s = pattern.subject().id();
 		let p = pattern.predicate().id();
 		let o = pattern.object().id();
@@ -374,7 +360,35 @@ impl<'a, M> Iterator for ResourceFacts<'a, M> {
 	}
 }
 
-pub enum Matching<'a, M> {
+struct MatchingConstraints {
+	predicate: pattern::PatternPredicate,
+	object: pattern::PatternObject,
+	sign: Option<Sign>,
+}
+
+impl MatchingConstraints {
+	fn filter(&self, Signed(sign, triple): Signed<Triple>) -> bool {
+		self.sign.map(|s| sign == s).unwrap_or(true)
+			&& self.predicate.filter_triple(triple)
+			&& self.object.filter_triple(triple)
+	}
+}
+
+pub struct Matching<'a, M> {
+	inner: InnerMatching<'a, M>,
+	constraints: MatchingConstraints,
+}
+
+impl<'a, M> Iterator for Matching<'a, M> {
+	type Item = (usize, &'a Fact<M>);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner
+			.find(|(_, Meta(t, _))| self.constraints.filter(*t))
+	}
+}
+
+enum InnerMatching<'a, M> {
 	None,
 	All(slab::Iter<'a, Fact<M>>),
 	Constrained {
@@ -385,7 +399,7 @@ pub enum Matching<'a, M> {
 	},
 }
 
-impl<'a, M> Iterator for Matching<'a, M> {
+impl<'a, M> Iterator for InnerMatching<'a, M> {
 	type Item = (usize, &'a Fact<M>);
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -470,12 +484,12 @@ pub enum MatchingMut<'a, M> {
 }
 
 impl<'a, M> Iterator for MatchingMut<'a, M> {
-	type Item = (usize, FactMut<'a, M>);
+	type Item = (usize, Meta<&'a Signed<Triple>, &'a mut M>);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
 			Self::None => None,
-			Self::All(iter) => iter.next().map(|(i, s)| (i, FactMut(s))),
+			Self::All(iter) => iter.next().map(|(i, Meta(t, m))| (i, Meta(&*t, m))),
 			Self::Constrained {
 				facts,
 				subject,
@@ -537,13 +551,13 @@ impl<'a, M> Iterator for MatchingMut<'a, M> {
 				}
 
 				candidate.map(|i| {
-					let fact: &'a mut Fact<M> = unsafe {
+					let Meta(t, m): &'a mut Fact<M> = unsafe {
 						// This is safe because the iterator does not yield
 						// aliased items.
 						std::mem::transmute(&mut facts[i])
 					};
 
-					(i, FactMut(fact))
+					(i, Meta(&*t, m))
 				})
 			}
 		}

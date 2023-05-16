@@ -1,13 +1,13 @@
-mod sign;
 mod replace_id;
 mod search;
+mod sign;
 
 use std::hash::Hash;
 
-use hashbrown::{HashSet, HashMap};
-pub use sign::*;
+use hashbrown::{HashMap, HashSet};
 pub use replace_id::*;
 pub use search::*;
+pub use sign::*;
 
 pub trait Union {
 	fn union_with(&mut self, other: Self);
@@ -26,9 +26,7 @@ impl<K: Eq + Hash, V: Union> Union for HashMap<K, V> {
 				hashbrown::hash_map::Entry::Vacant(entry) => {
 					entry.insert(v);
 				}
-				hashbrown::hash_map::Entry::Occupied(mut entry) => {
-					entry.get_mut().union_with(v)
-				}
+				hashbrown::hash_map::Entry::Occupied(mut entry) => entry.get_mut().union_with(v),
 			}
 		}
 	}

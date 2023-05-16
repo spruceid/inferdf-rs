@@ -1,21 +1,74 @@
-mod utils;
 pub mod builder;
 pub mod cause;
-pub mod pattern;
 pub mod dataset;
 pub mod interpretation;
+pub mod pattern;
 pub mod semantics;
+mod utils;
 
-pub use utils::*;
+pub use builder::Builder;
 pub use cause::Cause;
-pub use pattern::Pattern;
 use derivative::Derivative;
+pub use pattern::Pattern;
 use rdf_types::{BlankIdVocabulary, IriVocabulary};
+pub use utils::*;
 
 pub type Triple = rdf_types::Triple<Id, Id, Id>;
 pub type Quad = rdf_types::Quad<Id, Id, Id, Id>;
 
 pub trait Vocabulary: IriVocabulary + BlankIdVocabulary + LiteralVocabulary {}
+
+pub struct IndexVocabulary<I = rdf_types::vocabulary::Index, B = rdf_types::vocabulary::Index> {
+	base: rdf_types::IndexVocabulary<I, B>,
+}
+
+impl<I, B> Default for IndexVocabulary<I, B> {
+	fn default() -> Self {
+		Self {
+			base: rdf_types::IndexVocabulary::default(),
+		}
+	}
+}
+
+impl<I, B> IndexVocabulary<I, B> {
+	pub fn new() -> Self {
+		Self::default()
+	}
+}
+
+impl<I: rdf_types::vocabulary::IndexedIri, B> IriVocabulary for IndexVocabulary<I, B> {
+	type Iri = I;
+
+	fn iri<'i>(&'i self, id: &'i Self::Iri) -> Option<iref::Iri<'i>> {
+		self.base.iri(id)
+	}
+
+	fn get(&self, iri: iref::Iri) -> Option<Self::Iri> {
+		self.base.get(iri)
+	}
+}
+
+impl<I, B: rdf_types::vocabulary::IndexedBlankId> BlankIdVocabulary for IndexVocabulary<I, B> {
+	type BlankId = B;
+
+	fn blank_id<'b>(&'b self, id: &'b Self::BlankId) -> Option<&'b rdf_types::BlankId> {
+		self.base.blank_id(id)
+	}
+
+	fn get_blank_id(&self, id: &rdf_types::BlankId) -> Option<Self::BlankId> {
+		self.base.get_blank_id(id)
+	}
+}
+
+impl<I: rdf_types::vocabulary::IndexedIri, B: rdf_types::vocabulary::IndexedBlankId> Vocabulary
+	for IndexVocabulary<I, B>
+{
+}
+
+impl<I, B: rdf_types::vocabulary::IndexedBlankId> LiteralVocabulary for IndexVocabulary<I, B> {
+	type StringLiteral = rdf_types::vocabulary::Index;
+	type LanguageTag = rdf_types::vocabulary::Index;
+}
 
 pub trait LiteralVocabulary {
 	type StringLiteral;
@@ -126,14 +179,11 @@ impl<V: Vocabulary> SemiInterpretedLiteral<V> {
 	}
 }
 
-pub type GlobalTerm<V> =
-	rdf_types::Term<<V as IriVocabulary>::Iri, <V as BlankIdVocabulary>::BlankId, GlobalLiteral<V>>;
+pub type GlobalId<V> = rdf_types::Id<<V as IriVocabulary>::Iri, <V as BlankIdVocabulary>::BlankId>;
 
-pub type SemiInterpretedTerm<V> = rdf_types::Term<
-	<V as IriVocabulary>::Iri,
-	<V as BlankIdVocabulary>::BlankId,
-	SemiInterpretedLiteral<V>,
->;
+pub type GlobalTerm<V> = rdf_types::Term<GlobalId<V>, GlobalLiteral<V>>;
+
+pub type SemiInterpretedTerm<V> = rdf_types::Term<GlobalId<V>, SemiInterpretedLiteral<V>>;
 
 pub trait GlobalTermExt<V: Vocabulary> {
 	fn interpret_literal_type_with_mut(
@@ -190,8 +240,7 @@ impl<V: Vocabulary> GlobalTermExt<V> for GlobalTerm<V> {
 		V::StringLiteral: Copy,
 	{
 		match self {
-			Self::Iri(iri) => SemiInterpretedTerm::Iri(*iri),
-			Self::Blank(blank) => SemiInterpretedTerm::Blank(*blank),
+			Self::Id(id) => SemiInterpretedTerm::Id(*id),
 			Self::Literal(literal) => {
 				SemiInterpretedTerm::Literal(literal.interpret_type_with_mut(f))
 			}
@@ -208,8 +257,7 @@ impl<V: Vocabulary> GlobalTermExt<V> for GlobalTerm<V> {
 		V::StringLiteral: Copy,
 	{
 		match self {
-			Self::Iri(iri) => Some(SemiInterpretedTerm::Iri(*iri)),
-			Self::Blank(blank) => Some(SemiInterpretedTerm::Blank(*blank)),
+			Self::Id(id) => Some(SemiInterpretedTerm::Id(*id)),
 			Self::Literal(literal) => Some(SemiInterpretedTerm::Literal(
 				literal.try_interpret_type_with_mut(f)?,
 			)),
@@ -268,7 +316,7 @@ pub trait TripleExt {
 
 impl TripleExt for Triple {
 	fn into_pattern(self) -> Pattern {
-		Pattern::from_triple(self)
+		rdf_types::Triple(self.0.into(), self.1.into(), self.2.into())
 	}
 }
 

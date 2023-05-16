@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use derivative::Derivative;
 use hashbrown::{HashMap, HashSet};
 use slab::Slab;
 
@@ -11,12 +12,16 @@ use crate::{
 pub type LiteralValue<V> = SemiInterpretedLiteral<V>;
 
 /// RDF interpretation.
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct Interpretation<V: Vocabulary> {
 	resources: Slab<Resource<V>>,
 	by_iri: HashMap<V::Iri, Id>,
 	by_blank: HashMap<V::BlankId, Id>,
 }
 
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct Resource<V: Vocabulary> {
 	as_iri: HashSet<V::Iri>,
 	as_blank: HashSet<V::BlankId>,
@@ -26,6 +31,10 @@ pub struct Resource<V: Vocabulary> {
 }
 
 impl<V: Vocabulary> Resource<V> {
+	pub fn new() -> Self {
+		Self::default()
+	}
+
 	pub fn from_iri(iri: V::Iri) -> Self
 	where
 		V::Iri: Eq + Hash,
@@ -122,6 +131,10 @@ impl<V: Vocabulary> Interpretation<V> {
 		self.resources.get_mut(id.0)
 	}
 
+	pub fn new_resource(&mut self) -> Id {
+		Id(self.resources.insert(Resource::new()))
+	}
+
 	/// Returns the interpretation of `literal` along with the interpretation of its type.
 	pub fn literal_interpretation(&self, literal: SemiInterpretedLiteral<V>) -> Option<Id>
 	where
@@ -178,8 +191,8 @@ impl<V: Vocabulary> Interpretation<V> {
 		V::StringLiteral: Eq + Hash,
 	{
 		match term {
-			rdf_types::Term::Iri(iri) => self.by_iri.get(&iri).copied(),
-			rdf_types::Term::Blank(blank) => self.by_blank.get(&blank).copied(),
+			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => self.by_iri.get(&iri).copied(),
+			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => self.by_blank.get(&blank).copied(),
 			rdf_types::Term::Literal(literal) => self.literal_interpretation(literal),
 		}
 	}
@@ -191,11 +204,11 @@ impl<V: Vocabulary> Interpretation<V> {
 		V::StringLiteral: Copy + Eq + Hash,
 	{
 		match term {
-			rdf_types::Term::Iri(iri) => *self
+			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => *self
 				.by_iri
 				.entry(iri)
 				.or_insert_with(|| Id(self.resources.insert(Resource::from_iri(iri)))),
-			rdf_types::Term::Blank(blank) => *self
+			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => *self
 				.by_blank
 				.entry(blank)
 				.or_insert_with(|| Id(self.resources.insert(Resource::from_blank(blank)))),
@@ -210,11 +223,11 @@ impl<V: Vocabulary> Interpretation<V> {
 		V::StringLiteral: Copy + Eq + Hash,
 	{
 		match term {
-			rdf_types::Term::Iri(iri) => {
+			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => {
 				assert!(self.by_iri.insert(iri, id).is_none());
 				self.resources[id.0].as_iri.insert(iri);
 			}
-			rdf_types::Term::Blank(blank) => {
+			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => {
 				assert!(self.by_blank.insert(blank, id).is_none());
 				self.resources[id.0].as_blank.insert(blank);
 			}
@@ -334,8 +347,12 @@ where
 	fn next(&mut self) -> Option<Self::Item> {
 		self.as_iri
 			.next()
-			.map(|iri| GlobalTerm::Iri(*iri))
-			.or_else(|| self.as_blank.next().map(|blank| GlobalTerm::Blank(*blank)))
+			.map(|iri| GlobalTerm::Id(rdf_types::Id::Iri(*iri)))
+			.or_else(|| {
+				self.as_blank
+					.next()
+					.map(|blank| GlobalTerm::Id(rdf_types::Id::Blank(*blank)))
+			})
 			.or_else(|| {
 				let literal = loop {
 					match &mut self.current_literal {
@@ -365,6 +382,8 @@ pub trait Dependency<V: Vocabulary> {
 	fn interpretation(&self) -> &Interpretation<V>;
 }
 
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
 pub struct CompositeInterpretation<V: Vocabulary> {
 	/// Final interpretation.
 	interpretation: Interpretation<V>,
@@ -374,8 +393,16 @@ pub struct CompositeInterpretation<V: Vocabulary> {
 }
 
 impl<V: Vocabulary> CompositeInterpretation<V> {
+	pub fn new() -> Self {
+		Self::default()
+	}
+
 	pub fn get_mut(&mut self, id: Id) -> Option<&mut Resource<V>> {
 		self.interpretation.get_mut(id)
+	}
+
+	pub fn new_resource(&mut self) -> Id {
+		self.interpretation.new_resource()
 	}
 
 	pub fn term_interpretation(&self, term: SemiInterpretedTerm<V>) -> Option<Id>
