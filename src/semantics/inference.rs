@@ -5,7 +5,7 @@ pub use rule::{Path, Rule};
 
 use crate::{
 	pattern::{self, Instantiate, Matching},
-	Id, IteratorSearch, Signed, Triple,
+	IteratorSearch, Signed, Triple,
 };
 
 use self::rule::TripleStatement;
@@ -50,22 +50,20 @@ impl System {
 	/// Deduce new facts from the given triple.
 	pub fn deduce(
 		&self,
-		context: &impl Context,
+		context: &mut impl Context,
 		triple: Signed<Triple>,
-		mut new_id: impl FnMut() -> Id,
 		mut f: impl FnMut(Signed<TripleStatement>),
 	) {
 		for &path in self.paths.get(triple) {
-			self.deduce_from(context, triple, path, &mut new_id, &mut f)
+			self.deduce_from(context, triple, path, &mut f)
 		}
 	}
 
 	fn deduce_from(
 		&self,
-		context: &impl Context,
+		context: &mut impl Context,
 		triple: Signed<Triple>,
 		path: Path,
-		mut new_id: impl FnMut() -> Id,
 		f: &mut impl FnMut(Signed<TripleStatement>),
 	) {
 		let rule = self.get(path.rule).unwrap();
@@ -75,7 +73,8 @@ impl System {
 			.value()
 			.matching(&mut substitution, triple.into_value()));
 
-		rule.hypothesis
+		let substitutions: Vec<_> = rule
+			.hypothesis
 			.patterns
 			.iter()
 			.copied()
@@ -102,13 +101,19 @@ impl System {
 					None
 				}
 			})
+			.collect();
+
+		substitutions
+			.into_iter()
 			.flat_map(|mut substitution| {
 				// create new blank nodes.
 				let statements: Vec<_> = rule
 					.conclusion
 					.statements
 					.iter()
-					.map(|statement| statement.instantiate(&mut substitution, &mut new_id))
+					.map(|statement| {
+						statement.instantiate(&mut substitution, || context.new_resource())
+					})
 					.collect();
 
 				statements.into_iter()
@@ -120,11 +125,10 @@ impl System {
 impl Semantics for System {
 	fn deduce(
 		&self,
-		context: &impl Context,
+		context: &mut impl Context,
 		triple: Signed<Triple>,
-		new_id: impl FnMut() -> Id,
 		f: impl FnMut(Signed<TripleStatement>),
 	) {
-		self.deduce(context, triple, new_id, f)
+		self.deduce(context, triple, f)
 	}
 }

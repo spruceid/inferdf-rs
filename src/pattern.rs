@@ -1,17 +1,38 @@
-use crate::{Id, Triple};
+use crate::{interpretation::Interpret, uninterpreted, Id, Triple};
 
 pub mod map;
 
 pub use map::BipolarMap;
+use rdf_types::{InsertIntoVocabulary, Vocabulary, MapLiteral};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum IdOrVar {
-	Id(Id),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum IdOrVar<T = Id> {
+	Id(T),
 	Var(usize),
 }
 
+impl<T> IdOrVar<T> {
+	pub fn map<U>(self, f: impl Fn(T) -> U) -> IdOrVar<U> {
+		match self {
+			Self::Id(t) => IdOrVar::Id(f(t)),
+			Self::Var(x) => IdOrVar::Var(x),
+		}
+	}
+
+	pub fn into_wrapping_iter(self) -> IdOrVarIter<T>
+	where
+		T: Iterator,
+	{
+		match self {
+			Self::Id(iter) => IdOrVarIter::Id(iter),
+			Self::Var(x) => IdOrVarIter::Var(Some(x)),
+		}
+	}
+}
+
 impl IdOrVar {
-	fn matching(&self, substitution: &mut PatternSubstitution, id: Id) -> bool {
+	pub fn matching(&self, substitution: &mut PatternSubstitution, id: Id) -> bool {
 		match self {
 			Self::Id(i) => *i == id,
 			Self::Var(x) => substitution.bind(*x, id),
@@ -19,13 +40,81 @@ impl IdOrVar {
 	}
 }
 
-impl From<Id> for IdOrVar {
-	fn from(value: Id) -> Self {
+impl<T> From<T> for IdOrVar<T> {
+	fn from(value: T) -> Self {
 		Self::Id(value)
 	}
 }
 
-pub type Pattern = rdf_types::Triple<IdOrVar, IdOrVar, IdOrVar>;
+impl<V, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for IdOrVar<T> {
+	type Inserted = IdOrVar<T::Inserted>;
+
+	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+		match self {
+			Self::Id(term) => IdOrVar::Id(term.insert_into_vocabulary(vocabulary)),
+			Self::Var(x) => IdOrVar::Var(x),
+		}
+	}
+}
+
+impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for IdOrVar<T> {
+	type Output = IdOrVar<T::Output>;
+
+	fn map_literal(self, f: impl FnMut(L) -> M) -> Self::Output {
+		match self {
+			Self::Id(term) => IdOrVar::Id(term.map_literal(f)),
+			Self::Var(x) => IdOrVar::Var(x),
+		}
+	}
+}
+
+impl<V: Vocabulary> Interpret<V> for IdOrVar<uninterpreted::Term<V>> {
+	type Interpreted = IdOrVar;
+
+	fn interpret(
+		self,
+		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+	) -> Self::Interpreted {
+		match self {
+			Self::Id(term) => IdOrVar::Id(interpretation.insert_term(term)),
+			Self::Var(x) => IdOrVar::Var(x),
+		}
+	}
+}
+
+pub type Pattern<T = Id> = rdf_types::Triple<IdOrVar<T>, IdOrVar<T>, IdOrVar<T>>;
+
+impl<V: Vocabulary> Interpret<V> for Pattern<uninterpreted::Term<V>> {
+	type Interpreted = Pattern;
+
+	fn interpret(
+		self,
+		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+	) -> Self::Interpreted {
+		rdf_types::Triple(
+			self.0.interpret(interpretation),
+			self.1.interpret(interpretation),
+			self.2.interpret(interpretation),
+		)
+	}
+}
+
+#[derive(Debug, Clone)]
+pub enum IdOrVarIter<T = Id> {
+	Id(T),
+	Var(Option<usize>),
+}
+
+impl<I: Iterator> Iterator for IdOrVarIter<I> {
+	type Item = IdOrVar<I::Item>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		match self {
+			Self::Id(iter) => iter.next().map(IdOrVar::Id),
+			Self::Var(x) => x.take().map(IdOrVar::Var),
+		}
+	}
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Canonical {
@@ -36,6 +125,30 @@ pub enum Canonical {
 impl From<Pattern> for Canonical {
 	fn from(value: Pattern) -> Self {
 		Self::from_pattern(value)
+	}
+}
+
+impl From<Canonical> for Pattern {
+	fn from(value: Canonical) -> Self {
+		let s = match value.subject() {
+			PatternSubject::Any => IdOrVar::Var(0),
+			PatternSubject::Given(id) => IdOrVar::Id(id),
+		};
+
+		let p = match value.predicate() {
+			PatternPredicate::Any => IdOrVar::Var(1),
+			PatternPredicate::SameAsSubject => IdOrVar::Var(0),
+			PatternPredicate::Given(id) => IdOrVar::Id(id),
+		};
+
+		let o = match value.object() {
+			PatternObject::Any => IdOrVar::Var(2),
+			PatternObject::SameAsSubject => IdOrVar::Var(0),
+			PatternObject::SameAsPredicate => IdOrVar::Var(1),
+			PatternObject::Given(id) => IdOrVar::Id(id),
+		};
+
+		rdf_types::Triple(s, p, o)
 	}
 }
 

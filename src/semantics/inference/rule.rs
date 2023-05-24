@@ -1,34 +1,183 @@
+use rdf_types::{InsertIntoVocabulary, Vocabulary, MapLiteral};
+use serde::{Deserialize, Serialize};
+
 use crate::{
 	builder::QuadStatement,
+	interpretation::Interpret,
 	pattern::{IdOrVar, Instantiate, PatternSubstitution},
-	Id, Pattern, Signed, Triple,
+	uninterpreted, Id, Pattern, Signed, Triple,
 };
 
 /// Inference rule.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Rule {
-	pub hypothesis: Hypothesis,
-	pub conclusion: Conclusion,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Rule<T = Id> {
+	pub hypothesis: Hypothesis<T>,
+	pub conclusion: Conclusion<T>,
+}
+
+impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Rule<T> {
+	type Inserted = Rule<T::Inserted>;
+
+	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+		Rule {
+			hypothesis: self.hypothesis.insert_into_vocabulary(vocabulary),
+			conclusion: self.conclusion.insert_into_vocabulary(vocabulary),
+		}
+	}
+}
+
+impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Rule<T> {
+	type Output = Rule<T::Output>;
+
+	fn map_literal(self, mut f: impl FnMut(L) -> M) -> Self::Output {
+		Rule {
+			hypothesis: self.hypothesis.map_literal(&mut f),
+			conclusion: self.conclusion.map_literal(f),
+		}
+	}
+}
+
+impl<V: Vocabulary> Interpret<V> for Rule<uninterpreted::Term<V>> {
+	type Interpreted = Rule;
+
+	fn interpret(
+		self,
+		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+	) -> Self::Interpreted {
+		Rule {
+			hypothesis: self.hypothesis.interpret(interpretation),
+			conclusion: self.conclusion.interpret(interpretation),
+		}
+	}
 }
 
 /// Rule hypohtesis.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Hypothesis {
-	pub variables_count: usize,
-	pub patterns: Vec<Signed<Pattern>>,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Hypothesis<T = Id> {
+	pub patterns: Vec<Signed<Pattern<T>>>,
+}
+
+impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Hypothesis<T> {
+	type Inserted = Hypothesis<T::Inserted>;
+
+	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+		Hypothesis {
+			patterns: self.patterns.insert_into_vocabulary(vocabulary),
+		}
+	}
+}
+
+impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Hypothesis<T> {
+	type Output = Hypothesis<T::Output>;
+
+	fn map_literal(self, f: impl FnMut(L) -> M) -> Self::Output {
+		Hypothesis {
+			patterns: self.patterns.map_literal(f),
+		}
+	}
+}
+
+impl<V: Vocabulary> Interpret<V> for Hypothesis<uninterpreted::Term<V>> {
+	type Interpreted = Hypothesis;
+
+	fn interpret(
+		self,
+		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+	) -> Self::Interpreted {
+		Hypothesis {
+			patterns: self.patterns.interpret(interpretation),
+		}
+	}
 }
 
 /// Rule conclusion.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Conclusion {
-	pub variables_count: usize,
-	pub statements: Vec<Signed<StatementPattern>>,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Conclusion<T = Id> {
+	pub statements: Vec<Signed<StatementPattern<T>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum StatementPattern {
-	Triple(Pattern),
-	Eq(IdOrVar, IdOrVar),
+impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Conclusion<T> {
+	type Inserted = Conclusion<T::Inserted>;
+
+	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+		Conclusion {
+			statements: self.statements.insert_into_vocabulary(vocabulary),
+		}
+	}
+}
+
+impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Conclusion<T> {
+	type Output = Conclusion<T::Output>;
+
+	fn map_literal(self, f: impl FnMut(L) -> M) -> Self::Output {
+		Conclusion {
+			statements: self.statements.map_literal(f),
+		}
+	}
+}
+
+impl<V: Vocabulary> Interpret<V> for Conclusion<uninterpreted::Term<V>> {
+	type Interpreted = Conclusion;
+
+	fn interpret(
+		self,
+		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+	) -> Self::Interpreted {
+		Conclusion {
+			statements: self.statements.interpret(interpretation),
+		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum StatementPattern<T = Id> {
+	Triple(Pattern<T>),
+	Eq(IdOrVar<T>, IdOrVar<T>),
+}
+
+impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for StatementPattern<T> {
+	type Inserted = StatementPattern<T::Inserted>;
+
+	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+		match self {
+			Self::Triple(pattern) => {
+				StatementPattern::Triple(pattern.insert_into_vocabulary(vocabulary))
+			}
+			Self::Eq(a, b) => StatementPattern::Eq(
+				a.insert_into_vocabulary(vocabulary),
+				b.insert_into_vocabulary(vocabulary),
+			),
+		}
+	}
+}
+
+impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for StatementPattern<T> {
+	type Output = StatementPattern<T::Output>;
+
+	fn map_literal(self, mut f: impl FnMut(L) -> M) -> Self::Output {
+		match self {
+			Self::Triple(pattern) => StatementPattern::Triple(pattern.map_literal(f)),
+			Self::Eq(a, b) => StatementPattern::Eq(a.map_literal(&mut f), b.map_literal(f)),
+		}
+	}
+}
+
+impl<V: Vocabulary> Interpret<V> for StatementPattern<uninterpreted::Term<V>> {
+	type Interpreted = StatementPattern;
+
+	fn interpret(
+		self,
+		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+	) -> Self::Interpreted {
+		match self {
+			Self::Triple(pattern) => StatementPattern::Triple(pattern.interpret(interpretation)),
+			Self::Eq(a, b) => {
+				StatementPattern::Eq(a.interpret(interpretation), b.interpret(interpretation))
+			}
+		}
+	}
 }
 
 impl Instantiate for StatementPattern {

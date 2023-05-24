@@ -65,6 +65,13 @@ impl<M> Dataset<M> {
 		}
 	}
 
+	pub fn iter(&self) -> Iter<M> {
+		Iter {
+			graphs: self.graphs(),
+			current: None,
+		}
+	}
+
 	pub fn graphs(&self) -> Graphs<M> {
 		Graphs {
 			default_graph: Some(&self.default_graph),
@@ -258,6 +265,48 @@ impl<'a, M> Iterator for Matching<'a, M> {
 pub struct MatchingQuads<'a, M>(Matching<'a, M>);
 
 impl<'a, M> Iterator for MatchingQuads<'a, M> {
+	type Item = Quad;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0
+			.next()
+			.map(|(g, _, Meta(Signed(_, triple), _))| triple.into_quad(g))
+	}
+}
+
+pub struct Iter<'a, M> {
+	graphs: Graphs<'a, M>,
+	current: Option<(Option<Id>, graph::Iter<'a, M>)>,
+}
+
+impl<'a, M> Iter<'a, M> {
+	pub fn into_quads(self) -> IterQuads<'a, M> {
+		IterQuads(self)
+	}
+}
+
+impl<'a, M> Iterator for Iter<'a, M> {
+	type Item = (Option<Id>, usize, &'a graph::Fact<M>);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match self.current.as_mut() {
+				Some((g, m)) => match m.next() {
+					Some((i, triple)) => break Some((*g, i, triple)),
+					None => self.current = None,
+				},
+				None => match self.graphs.next() {
+					Some((g, graph)) => self.current = Some((g, graph.iter())),
+					None => break None,
+				},
+			}
+		}
+	}
+}
+
+pub struct IterQuads<'a, M>(Iter<'a, M>);
+
+impl<'a, M> Iterator for IterQuads<'a, M> {
 	type Item = Quad;
 
 	fn next(&mut self) -> Option<Self::Item> {

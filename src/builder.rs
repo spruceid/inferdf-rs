@@ -1,15 +1,19 @@
-use std::hash::Hash;
-
-use derivative::Derivative;
-use hashbrown::HashMap;
 use locspan::Meta;
+use rdf_types::Vocabulary;
+use std::hash::Hash;
 
 use crate::{
 	dataset::{self, Dataset},
-	interpretation::{self, CompositeInterpretation, Interpretation},
+	interpretation::{self, CompositeInterpretation, InterpretationMut},
 	semantics::Semantics,
-	Cause, Id, Quad, ReplaceId, Sign, Signed, Triple, Vocabulary,
+	uninterpreted, Cause, Id, Quad, ReplaceId, Sign, Signed,
 };
+
+mod context;
+mod dependency;
+
+pub use context::*;
+pub use dependency::*;
 
 pub enum Contradiction {
 	Data(dataset::Contradiction),
@@ -53,9 +57,13 @@ pub struct Builder<V: Vocabulary, M, S> {
 }
 
 impl<V: Vocabulary, M, S> Builder<V, M, S> {
-	pub fn new(dependencies: Dependencies<V, M>, semantics: S) -> Self {
+	pub fn new(
+		dependencies: Dependencies<V, M>,
+		interpretation: CompositeInterpretation<V>,
+		semantics: S,
+	) -> Self {
 		Self {
-			interpretation: CompositeInterpretation::new(),
+			interpretation,
 			data: Data {
 				set: Dataset::new(),
 				dependencies,
@@ -63,9 +71,49 @@ impl<V: Vocabulary, M, S> Builder<V, M, S> {
 			semantics,
 		}
 	}
+
+	pub fn interpretation(&self) -> &CompositeInterpretation<V> {
+		&self.interpretation
+	}
+
+	pub fn dataset(&self) -> &Dataset<Cause<M>> {
+		&self.data.set
+	}
+}
+
+impl<V: Vocabulary, M, S: Semantics> InterpretationMut<V> for Builder<V, M, S>
+where
+	V::Iri: Copy + Eq + Hash,
+	V::BlankId: Copy + Eq + Hash,
+	V::Literal: Copy + Eq + Hash,
+{
+	fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id {
+		self.insert_term(term)
+	}
 }
 
 impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
+	pub fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id
+	where
+		V::Iri: Copy + Eq + Hash,
+		V::BlankId: Copy + Eq + Hash,
+		V::Literal: Copy + Eq + Hash,
+	{
+		self.interpretation
+			.insert_term(&self.data.dependencies, term)
+	}
+
+	pub fn insert_quad(&mut self, quad: uninterpreted::Quad<V>) -> Quad
+	where
+		V::Iri: Copy + Eq + Hash,
+		V::BlankId: Copy + Eq + Hash,
+		V::Literal: Copy + Eq + Hash,
+	{
+		self.interpretation
+			.insert_quad(&self.data.dependencies, quad)
+	}
+
+	/// Insert a new quad in the built dataset.
 	pub fn insert(
 		&mut self,
 		Meta(Signed(sign, quad), cause): dataset::Fact<Cause<M>>,
@@ -73,7 +121,7 @@ impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
-		V::StringLiteral: Copy + Eq + Hash,
+		V::Literal: Copy + Eq + Hash,
 		M: Clone,
 	{
 		let mut stack = vec![Meta(Signed(sign, QuadStatement::Quad(quad)), cause)];
@@ -92,10 +140,10 @@ impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
 							self.data.set.insert(Meta(Signed(sign, quad), cause))?;
 
 						if inserted {
+							let mut context = Context::new(&mut self.interpretation, &self.data);
 							self.semantics.deduce(
-								&self.data.set,
+								&mut context,
 								Signed(sign, triple),
-								|| self.interpretation.new_resource(),
 								|Signed(sign, statement)| {
 									stack.push(Meta(
 										Signed(sign, statement.with_graph(g)),
@@ -107,7 +155,7 @@ impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
 					}
 				}
 				Signed(Sign::Positive, QuadStatement::Eq(a, b, g)) => {
-					let (a, b, removed_literal_instances) = self.interpretation.merge(a, b)?;
+					let (a, b) = self.interpretation.merge(a, b)?;
 					self.data
 						.set
 						.replace_id(b, a, |Meta(Signed(sign, triple), _)| {
@@ -117,34 +165,20 @@ impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
 						})?;
 					stack.replace_id(b, a);
 
-					for (value, id) in removed_literal_instances {
-						if let Some(other_id) = self
-							.interpretation
-							.get_mut(a)
-							.unwrap()
-							.insert_lexical_value(value, id)
-						{
-							stack.push(Meta(
-								Signed(sign, QuadStatement::Eq(id, other_id, g)),
-								Cause::Entailed(cause.metadata().clone()),
-							))
-						}
-					}
-
 					for (d, _, Meta(Signed(sign, quad), cause)) in
 						self.data.resource_facts(&self.interpretation, a)
 					{
 						let triple = self.interpretation.import_triple(
-							&self.data.dependencies.0,
+							&self.data.dependencies,
 							d,
 							quad.into_triple().0,
 						);
 
 						let meta = cause.metadata();
+						let mut context = Context::new(&mut self.interpretation, &self.data);
 						self.semantics.deduce(
-							&self.data.set,
+							&mut context,
 							Signed(sign, triple),
-							|| self.interpretation.new_resource(),
 							|Signed(sign, statement)| {
 								stack.push(Meta(
 									Signed(sign, statement.with_graph(g)),
@@ -183,7 +217,7 @@ impl<V: Vocabulary, M> Data<V, M> {
 				interpretation
 					.dependency_ids(i, id)
 					.filter_map(move |local_id| {
-						let facts = d.dataset.resource_facts(local_id);
+						let facts = d.dataset().resource_facts(local_id);
 						if facts.is_empty() {
 							None
 						} else {
@@ -198,48 +232,6 @@ impl<V: Vocabulary, M> Data<V, M> {
 			toplevel,
 			dependencies,
 		}
-	}
-}
-
-pub struct Dependency<V: Vocabulary, M> {
-	interpretation: Interpretation<V>,
-	dataset: Dataset<Cause<M>>,
-}
-
-impl<V: Vocabulary, M> crate::interpretation::Dependency<V> for Dependency<V, M> {
-	fn interpretation(&self) -> &Interpretation<V> {
-		&self.interpretation
-	}
-}
-
-#[derive(Derivative)]
-#[derivative(Default(bound = ""))]
-pub struct Dependencies<V: Vocabulary, M>(HashMap<usize, Dependency<V, M>>);
-
-impl<V: Vocabulary, M> Dependencies<V, M> {
-	pub fn filter(
-		&self,
-		interpretation: &CompositeInterpretation<V>,
-		triple: Triple,
-		sign: Sign,
-	) -> Result<bool, dataset::Contradiction> {
-		for (&d, dependency) in &self.0 {
-			for dependency_triple in interpretation.dependency_triples(d, triple) {
-				if let Some((_, _, fact)) = dependency.dataset.find_triple(dependency_triple) {
-					if fact.sign() == sign {
-						return Ok(false);
-					} else {
-						return Err(dataset::Contradiction(triple));
-					}
-				}
-			}
-		}
-
-		Ok(true)
-	}
-
-	pub fn iter(&self) -> impl Iterator<Item = (usize, &Dependency<V, M>)> {
-		self.0.iter().map(|(i, d)| (*i, d))
 	}
 }
 

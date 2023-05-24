@@ -1,6 +1,9 @@
-use crate::{pattern::Instantiate, Id, ReplaceId};
+use rdf_types::{InsertIntoVocabulary, Vocabulary, MapLiteral};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+use crate::{interpretation::Interpret, pattern::Instantiate, Id, ReplaceId};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Signed<T>(pub Sign, pub T);
 
 impl<T> Signed<T> {
@@ -52,6 +55,33 @@ impl<T> Signed<T> {
 	}
 }
 
+impl<V, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Signed<T> {
+	type Inserted = Signed<T::Inserted>;
+
+	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+		Signed(self.0, self.1.insert_into_vocabulary(vocabulary))
+	}
+}
+
+impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Signed<T> {
+	type Output = Signed<T::Output>;
+
+	fn map_literal(self, f: impl FnMut(L) -> M) -> Self::Output {
+		Signed(self.0, self.1.map_literal(f))
+	}
+}
+
+impl<V: Vocabulary, T: Interpret<V>> Interpret<V> for Signed<T> {
+	type Interpreted = Signed<T::Interpreted>;
+
+	fn interpret(
+		self,
+		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+	) -> Self::Interpreted {
+		Signed(self.0, self.1.interpret(interpretation))
+	}
+}
+
 impl<T: Instantiate> Instantiate for Signed<T> {
 	type Output = Signed<T::Output>;
 
@@ -64,7 +94,7 @@ impl<T: Instantiate> Instantiate for Signed<T> {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Sign {
 	Positive,
 	Negative,

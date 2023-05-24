@@ -43,7 +43,7 @@ where
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Resource {
 	as_subject: BTreeSet<usize>,
 	as_predicate: BTreeSet<usize>,
@@ -63,6 +63,10 @@ impl<M> Graph<M> {
 		self.facts.get(i)
 	}
 
+	pub fn iter(&self) -> slab::Iter<Fact<M>> {
+		self.facts.iter()
+	}
+
 	pub fn insert(&mut self, Meta(fact, meta): Fact<M>) -> Result<(usize, bool), Contradiction> {
 		match self.find_triple(*fact.value()) {
 			Some((i, current_fact)) => {
@@ -76,18 +80,18 @@ impl<M> Graph<M> {
 				let triple = *fact.value();
 				let i = self.facts.insert(Meta(fact, meta));
 				self.resources
-					.get_mut(triple.subject())
-					.unwrap()
+					.entry(*triple.subject())
+					.or_default()
 					.as_subject
 					.insert(i);
 				self.resources
-					.get_mut(triple.predicate())
-					.unwrap()
+					.entry(*triple.predicate())
+					.or_default()
 					.as_predicate
 					.insert(i);
 				self.resources
-					.get_mut(triple.object())
-					.unwrap()
+					.entry(*triple.object())
+					.or_default()
 					.as_object
 					.insert(i);
 				Ok((i, true))
@@ -289,6 +293,19 @@ impl<M> IntoIterator for Graph<M> {
 		self.facts.into_iter()
 	}
 }
+
+pub type IntoIter<'a, M> = slab::IntoIter<Fact<M>>;
+
+impl<'a, M> IntoIterator for &'a Graph<M> {
+	type IntoIter = slab::Iter<'a, Fact<M>>;
+	type Item = (usize, &'a Fact<M>);
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.iter()
+	}
+}
+
+pub type Iter<'a, M> = slab::Iter<'a, Fact<M>>;
 
 pub enum ResourceFacts<'a, M> {
 	None,
