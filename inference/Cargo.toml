@@ -1,0 +1,16 @@
+[package]
+name = "inferdf-inference"
+version = "0.1.0"
+authors = ["Timothée Haudebourg <author@haudebourg.net>"]
+edition = "2021"
+
+[dependencies]
+inferdf-core.workspace = true
+log.workspace = true
+rdf-types.workspace = true
+iref.workspace = true
+derivative.workspace = true
+locspan.workspace = true
+hashbrown.workspace = true
+contextual.workspace = true
+serde.workspace = true

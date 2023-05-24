@@ -1,8 +1,12 @@
 use clap::Parser;
 use contextual::WithContext;
-use inferdf::{
-	interpretation::Interpret, semantics::inference::Rule, Cause, Sign,
+use inferdf_core::{
+	interpretation::{self, Interpret}, Cause, Sign,
 	Signed,
+};
+use inferdf_inference::{
+	semantics::{self, inference::Rule},
+	builder::{self, Builder}
 };
 use locspan::Meta;
 use nquads_syntax::Parse;
@@ -34,10 +38,10 @@ fn main() {
 
 	let mut vocabulary: IndexVocabulary = Default::default();
 
-	let dependencies = inferdf::builder::Dependencies::<IndexVocabulary, ()>::default();
-	let mut interpretation = inferdf::interpretation::CompositeInterpretation::new();
+	let dependencies = builder::Dependencies::<IndexVocabulary, ()>::default();
+	let mut interpretation = interpretation::CompositeInterpretation::new();
 
-	let mut system = inferdf::semantics::inference::System::new();
+	let mut system = semantics::inference::System::new();
 	for filename in args.semantics {
 		let content = std::fs::read_to_string(filename).expect("unable to read file");
 		let rules: Vec<Rule<rdf_types::Term>> = ron::from_str(&content).unwrap();
@@ -51,7 +55,7 @@ fn main() {
 		}
 	}
 
-	let mut builder = inferdf::Builder::new(dependencies, interpretation, system);
+	let mut builder = Builder::new(dependencies, interpretation, system);
 
 	for input in args.inputs {
 		let buffer = std::fs::read_to_string(input).expect("unable to read file");

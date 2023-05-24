@@ -1,12 +1,13 @@
 use rdf_types::{InsertIntoVocabulary, Vocabulary, MapLiteral};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-	builder::QuadStatement,
-	interpretation::Interpret,
+use inferdf_core::{
+	interpretation::{self, Interpret},
 	pattern::{IdOrVar, Instantiate, PatternSubstitution},
 	uninterpreted, Id, Pattern, Signed, Triple,
 };
+
+use crate::builder::QuadStatement;
 
 /// Inference rule.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -42,7 +43,7 @@ impl<V: Vocabulary> Interpret<V> for Rule<uninterpreted::Term<V>> {
 
 	fn interpret(
 		self,
-		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+		interpretation: &mut impl interpretation::InterpretationMut<V>,
 	) -> Self::Interpreted {
 		Rule {
 			hypothesis: self.hypothesis.interpret(interpretation),
@@ -83,7 +84,7 @@ impl<V: Vocabulary> Interpret<V> for Hypothesis<uninterpreted::Term<V>> {
 
 	fn interpret(
 		self,
-		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+		interpretation: &mut impl interpretation::InterpretationMut<V>,
 	) -> Self::Interpreted {
 		Hypothesis {
 			patterns: self.patterns.interpret(interpretation),
@@ -123,7 +124,7 @@ impl<V: Vocabulary> Interpret<V> for Conclusion<uninterpreted::Term<V>> {
 
 	fn interpret(
 		self,
-		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+		interpretation: &mut impl interpretation::InterpretationMut<V>,
 	) -> Self::Interpreted {
 		Conclusion {
 			statements: self.statements.interpret(interpretation),
@@ -169,7 +170,7 @@ impl<V: Vocabulary> Interpret<V> for StatementPattern<uninterpreted::Term<V>> {
 
 	fn interpret(
 		self,
-		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+		interpretation: &mut impl interpretation::InterpretationMut<V>,
 	) -> Self::Interpreted {
 		match self {
 			Self::Triple(pattern) => StatementPattern::Triple(pattern.interpret(interpretation)),

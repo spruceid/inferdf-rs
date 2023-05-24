@@ -1,13 +1,10 @@
-pub mod builder;
 pub mod cause;
 pub mod dataset;
 pub mod interpretation;
 pub mod pattern;
-pub mod semantics;
-mod uninterpreted;
+pub mod uninterpreted;
 mod utils;
 
-pub use builder::Builder;
 pub use cause::Cause;
 pub use pattern::Pattern;
 pub use utils::*;

@@ -2,9 +2,9 @@ use derivative::Derivative;
 use hashbrown::HashMap;
 use rdf_types::Vocabulary;
 
-use crate::{
+use inferdf_core::{
 	dataset::{self, Dataset},
-	interpretation::{CompositeInterpretation, Interpretation},
+	interpretation::{self, CompositeInterpretation, Interpretation},
 	Cause, Sign, Triple,
 };
 
@@ -23,7 +23,7 @@ impl<V: Vocabulary, M> Dependency<V, M> {
 	}
 }
 
-impl<V: Vocabulary, M> crate::interpretation::composite::Dependency<V> for Dependency<V, M> {
+impl<V: Vocabulary, M> interpretation::composite::Dependency<V> for Dependency<V, M> {
 	fn interpretation(&self) -> &Interpretation<V> {
 		&self.interpretation
 	}
@@ -67,7 +67,7 @@ impl<V: Vocabulary, M> Dependencies<V, M> {
 	}
 }
 
-impl<V: Vocabulary, M> crate::interpretation::composite::Dependencies<V> for Dependencies<V, M> {
+impl<V: Vocabulary, M> interpretation::composite::Dependencies<V> for Dependencies<V, M> {
 	type Dependency = Dependency<V, M>;
 	type Iter<'a> = DependenciesIter<'a, V, M> where Self: 'a, Self::Dependency: 'a;
 

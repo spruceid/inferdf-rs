@@ -1,4 +1,4 @@
-use crate::{pattern, Id, Quad, Signed, Triple};
+use inferdf_core::{pattern, Id, Quad, Signed, Triple};
 
 pub mod inference;
 

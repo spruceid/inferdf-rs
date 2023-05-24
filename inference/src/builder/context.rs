@@ -1,13 +1,16 @@
 use rdf_types::Vocabulary;
 
-use crate::{
+use inferdf_core::{
+	Id,
 	dataset::{self, Dataset},
 	interpretation::{
 		composite::{DependencyCanonicalPatterns, Interface},
 		CompositeInterpretation,
 	},
-	pattern, semantics, Cause, Quad, Sign, Signed,
+	pattern, Cause, Quad, Sign, Signed,
 };
+
+use crate::semantics;
 
 use super::{Data, DependenciesIter};
 
@@ -38,7 +41,7 @@ impl<'a, V: Vocabulary, M> semantics::Context for Context<'a, V, M> {
 		}
 	}
 
-	fn new_resource(&mut self) -> crate::Id {
+	fn new_resource(&mut self) -> Id {
 		self.interpretation.new_resource()
 	}
 }

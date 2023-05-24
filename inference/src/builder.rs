@@ -2,12 +2,13 @@ use locspan::Meta;
 use rdf_types::Vocabulary;
 use std::hash::Hash;
 
-use crate::{
+use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::{self, CompositeInterpretation, InterpretationMut},
-	semantics::Semantics,
 	uninterpreted, Cause, Id, Quad, ReplaceId, Sign, Signed,
 };
+
+use crate::semantics::Semantics;
 
 mod context;
 mod dependency;

@@ -3,7 +3,7 @@ pub mod rule;
 use hashbrown::HashMap;
 pub use rule::{Path, Rule};
 
-use crate::{
+use inferdf_core::{
 	pattern::{self, Instantiate, Matching},
 	IteratorSearch, Signed, Triple,
 };
