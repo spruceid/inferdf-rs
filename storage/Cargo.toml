@@ -1,0 +1,12 @@
+[package]
+name = "inferdf-storage"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+inferdf-core.workspace = true
+iref.workspace = true
+rdf-types.workspace = true
+thiserror.workspace = true
+langtag.workspace = true

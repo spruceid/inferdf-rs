@@ -9,6 +9,11 @@ pub use replace_id::*;
 pub use search::*;
 pub use sign::*;
 
+/// Any collection or iterator that can accurately report if it is empty.
+pub trait IsEmpty {
+	fn is_empty(&self) -> bool;
+}
+
 pub trait Union {
 	fn union_with(&mut self, other: Self);
 }

@@ -3,7 +3,7 @@ use crate::{interpretation::Interpret, uninterpreted, Id, Triple};
 pub mod map;
 
 pub use map::BipolarMap;
-use rdf_types::{InsertIntoVocabulary, Vocabulary, MapLiteral};
+use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

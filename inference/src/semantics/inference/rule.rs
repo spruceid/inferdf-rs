@@ -1,4 +1,4 @@
-use rdf_types::{InsertIntoVocabulary, Vocabulary, MapLiteral};
+use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
 use inferdf_core::{

@@ -127,7 +127,7 @@ impl<V: Vocabulary> Interpretation<V> {
 		V::BlankId: Copy,
 		V::Literal: Copy,
 	{
-		let r = &self.resources[id.0];
+		let r = &self.resources[id.index()];
 
 		TermsOf {
 			as_iri: r.as_iri.iter(),
@@ -156,15 +156,15 @@ impl<V: Vocabulary> Interpretation<V> {
 	}
 
 	pub fn get(&self, id: Id) -> Option<&Resource<V>> {
-		self.resources.get(id.0)
+		self.resources.get(id.index())
 	}
 
 	pub fn get_mut(&mut self, id: Id) -> Option<&mut Resource<V>> {
-		self.resources.get_mut(id.0)
+		self.resources.get_mut(id.index())
 	}
 
 	pub fn new_resource(&mut self) -> Id {
-		Id(self.resources.insert(Resource::new()))
+		Id(self.resources.insert(Resource::new()) as u32)
 	}
 
 	pub fn term_interpretation(&self, term: uninterpreted::Term<V>) -> Option<Id>
@@ -190,15 +190,16 @@ impl<V: Vocabulary> Interpretation<V> {
 			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => *self
 				.by_iri
 				.entry(iri)
-				.or_insert_with(|| Id(self.resources.insert(Resource::from_iri(iri)))),
+				.or_insert_with(|| Id(self.resources.insert(Resource::from_iri(iri)) as u32)),
 			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => *self
 				.by_blank
 				.entry(blank)
-				.or_insert_with(|| Id(self.resources.insert(Resource::from_blank(blank)))),
-			rdf_types::Term::Literal(literal) => *self
-				.by_literal
-				.entry(literal)
-				.or_insert_with(|| Id(self.resources.insert(Resource::from_literal(literal)))),
+				.or_insert_with(|| Id(self.resources.insert(Resource::from_blank(blank)) as u32)),
+			rdf_types::Term::Literal(literal) => {
+				*self.by_literal.entry(literal).or_insert_with(|| {
+					Id(self.resources.insert(Resource::from_literal(literal)) as u32)
+				})
+			}
 		}
 	}
 
@@ -211,15 +212,15 @@ impl<V: Vocabulary> Interpretation<V> {
 		match term {
 			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => {
 				assert!(self.by_iri.insert(iri, id).is_none());
-				self.resources[id.0].as_iri.insert(iri);
+				self.resources[id.index()].as_iri.insert(iri);
 			}
 			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => {
 				assert!(self.by_blank.insert(blank, id).is_none());
-				self.resources[id.0].as_blank.insert(blank);
+				self.resources[id.index()].as_blank.insert(blank);
 			}
 			rdf_types::Term::Literal(literal) => {
 				assert!(self.by_literal.insert(literal, id).is_none());
-				self.resources[id.0].as_literal.insert(literal);
+				self.resources[id.index()].as_literal.insert(literal);
 			}
 		}
 	}
@@ -272,13 +273,13 @@ impl<V: Vocabulary> Interpretation<V> {
 			std::mem::swap(&mut a, &mut b);
 		}
 
-		let resource = self.resources.remove(b.0);
+		let resource = self.resources.remove(b.index());
 
 		for id in resource.different_from {
 			if id == a {
 				return Err(Contradiction(a, b));
 			} else {
-				let different_resource = &mut self.resources[id.0];
+				let different_resource = &mut self.resources[id.index()];
 				different_resource.different_from.remove(&b);
 				different_resource.different_from.insert(a);
 			}
@@ -286,17 +287,17 @@ impl<V: Vocabulary> Interpretation<V> {
 
 		for iri in resource.as_iri {
 			self.by_iri.insert(iri, a);
-			self.resources[a.0].as_iri.insert(iri);
+			self.resources[a.index()].as_iri.insert(iri);
 		}
 
 		for blank in resource.as_blank {
 			self.by_blank.insert(blank, a);
-			self.resources[a.0].as_blank.insert(blank);
+			self.resources[a.index()].as_blank.insert(blank);
 		}
 
 		for literal in resource.as_literal {
 			self.by_literal.insert(literal, a);
-			self.resources[a.0].as_literal.insert(literal);
+			self.resources[a.index()].as_literal.insert(literal);
 		}
 
 		Ok((a, b))
@@ -306,8 +307,8 @@ impl<V: Vocabulary> Interpretation<V> {
 		if a == b {
 			Err(Contradiction(a, b))
 		} else {
-			self.resources[a.0].different_from.insert(b);
-			Ok(self.resources[b.0].different_from.insert(a))
+			self.resources[a.index()].different_from.insert(b);
+			Ok(self.resources[b.index()].different_from.insert(a))
 		}
 	}
 }

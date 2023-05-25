@@ -51,22 +51,25 @@ impl ReplaceId for QuadStatement {
 	}
 }
 
-pub struct Builder<V: Vocabulary, M, S> {
+pub struct Builder<V: Vocabulary, M, D, S> {
 	interpretation: CompositeInterpretation<V>,
-	data: Data<V, M>,
+	data: Data<V, M, D>,
 	semantics: S,
 }
 
-impl<V: Vocabulary, M, S> Builder<V, M, S> {
+impl<V: Vocabulary, M, D, S> Builder<V, M, D, S> {
 	pub fn new(
-		dependencies: Dependencies<V, M>,
+		dependencies: Dependencies<V, D>,
 		interpretation: CompositeInterpretation<V>,
 		semantics: S,
-	) -> Self {
+	) -> Self
+	where
+		D: Default,
+	{
 		Self {
 			interpretation,
 			data: Data {
-				set: Dataset::new(),
+				set: dataset::Standard::new(),
 				dependencies,
 			},
 			semantics,
@@ -77,12 +80,12 @@ impl<V: Vocabulary, M, S> Builder<V, M, S> {
 		&self.interpretation
 	}
 
-	pub fn dataset(&self) -> &Dataset<Cause<M>> {
+	pub fn dataset(&self) -> &dataset::Standard<Cause<M>> {
 		&self.data.set
 	}
 }
 
-impl<V: Vocabulary, M, S: Semantics> InterpretationMut<V> for Builder<V, M, S>
+impl<V: Vocabulary, M, D, S: Semantics> InterpretationMut<V> for Builder<V, M, D, S>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,
@@ -93,7 +96,7 @@ where
 	}
 }
 
-impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
+impl<V: Vocabulary, M, D, S: Semantics> Builder<V, M, D, S> {
 	pub fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id
 	where
 		V::Iri: Copy + Eq + Hash,
@@ -113,7 +116,9 @@ impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
 		self.interpretation
 			.insert_quad(&self.data.dependencies, quad)
 	}
+}
 
+impl<V: Vocabulary, M, D: Dataset<Metadata = Cause<M>>, S: Semantics> Builder<V, M, D, S> {
 	/// Insert a new quad in the built dataset.
 	pub fn insert(
 		&mut self,
@@ -199,17 +204,17 @@ impl<V: Vocabulary, M, S: Semantics> Builder<V, M, S> {
 	}
 }
 
-pub struct Data<V: Vocabulary, M> {
-	set: Dataset<Cause<M>>,
-	dependencies: Dependencies<V, M>,
+pub struct Data<V: Vocabulary, M, D> {
+	set: dataset::Standard<Cause<M>>,
+	dependencies: Dependencies<V, D>,
 }
 
-impl<V: Vocabulary, M> Data<V, M> {
+impl<V: Vocabulary, M, D: Dataset<Metadata = Cause<M>>> Data<V, M, D> {
 	pub fn resource_facts(
 		&self,
 		interpretation: &CompositeInterpretation<V>,
 		id: Id,
-	) -> ResourceFacts<M> {
+	) -> ResourceFacts<M, D> {
 		let toplevel = self.set.resource_facts(id);
 		let dependencies = self
 			.dependencies
@@ -218,7 +223,7 @@ impl<V: Vocabulary, M> Data<V, M> {
 				interpretation
 					.dependency_ids(i, id)
 					.filter_map(move |local_id| {
-						let facts = d.dataset().resource_facts(local_id);
+						let mut facts = d.dataset().resource_facts(local_id);
 						if facts.is_empty() {
 							None
 						} else {
@@ -239,13 +244,13 @@ impl<V: Vocabulary, M> Data<V, M> {
 /// Iterator over all the facts about the given resource, and the dependency it comes from.
 ///
 /// Facts are given in the dependency interpretation, not the top level interpretation.
-pub struct ResourceFacts<'a, M> {
+pub struct ResourceFacts<'a, M, D: Dataset> {
 	id: Id,
-	toplevel: dataset::ResourceFacts<'a, Cause<M>>,
-	dependencies: Vec<(usize, Id, dataset::ResourceFacts<'a, Cause<M>>)>,
+	toplevel: dataset::standard::ResourceFacts<'a, Cause<M>>,
+	dependencies: Vec<(usize, Id, dataset::ResourceFacts<'a, D>)>,
 }
 
-impl<'a, M> Iterator for ResourceFacts<'a, M> {
+impl<'a, M, D: Dataset<Metadata = Cause<M>>> Iterator for ResourceFacts<'a, M, D> {
 	type Item = (Option<usize>, Id, dataset::Fact<&'a Cause<M>>);
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -255,7 +260,7 @@ impl<'a, M> Iterator for ResourceFacts<'a, M> {
 			.or_else(|| {
 				while let Some((d, local_id, facts)) = self.dependencies.last_mut() {
 					match facts.next() {
-						Some(fact) => return Some((Some(*d), *local_id, fact)),
+						Some((_, fact)) => return Some((Some(*d), *local_id, fact)),
 						None => {
 							self.dependencies.pop();
 						}

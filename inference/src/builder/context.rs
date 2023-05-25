@@ -1,26 +1,29 @@
+use locspan::Meta;
 use rdf_types::Vocabulary;
 
 use inferdf_core::{
-	Id,
 	dataset::{self, Dataset},
 	interpretation::{
 		composite::{DependencyCanonicalPatterns, Interface},
 		CompositeInterpretation,
 	},
-	pattern, Cause, Quad, Sign, Signed,
+	pattern, Cause, Id, Quad, Sign, Signed,
 };
 
 use crate::semantics;
 
 use super::{Data, DependenciesIter};
 
-pub struct Context<'a, V: Vocabulary, M> {
+pub struct Context<'a, V: Vocabulary, M, D> {
 	interpretation: &'a mut CompositeInterpretation<V>,
-	data: &'a Data<V, M>,
+	data: &'a Data<V, M, D>,
 }
 
-impl<'a, V: Vocabulary, M> Context<'a, V, M> {
-	pub fn new(interpretation: &'a mut CompositeInterpretation<V>, data: &'a Data<V, M>) -> Self {
+impl<'a, V: Vocabulary, M, D> Context<'a, V, M, D> {
+	pub fn new(
+		interpretation: &'a mut CompositeInterpretation<V>,
+		data: &'a Data<V, M, D>,
+	) -> Self {
 		Self {
 			interpretation,
 			data,
@@ -28,8 +31,8 @@ impl<'a, V: Vocabulary, M> Context<'a, V, M> {
 	}
 }
 
-impl<'a, V: Vocabulary, M> semantics::Context for Context<'a, V, M> {
-	type PatternMatching<'r> = PatternMatching<'r, V, M> where Self: 'r;
+impl<'a, V: Vocabulary, M, D: Dataset> semantics::Context for Context<'a, V, M, D> {
+	type PatternMatching<'r> = PatternMatching<'r, V, M, D> where Self: 'r;
 
 	fn pattern_matching(&self, pattern: Signed<pattern::Canonical>) -> Self::PatternMatching<'_> {
 		PatternMatching {
@@ -46,29 +49,31 @@ impl<'a, V: Vocabulary, M> semantics::Context for Context<'a, V, M> {
 	}
 }
 
-struct DependencyPatternMatching<'a, M> {
-	dataset: &'a Dataset<Cause<M>>,
+struct DependencyPatternMatching<'a, D: Dataset> {
+	dataset: &'a D,
 	interface: &'a Interface,
 	patterns: DependencyCanonicalPatterns<'a>,
-	current: Option<dataset::MatchingQuads<'a, Cause<M>>>,
+	current: Option<dataset::MatchingQuads<'a, D>>,
 	sign: Sign,
 }
 
-impl<'a, M> Iterator for DependencyPatternMatching<'a, M> {
+impl<'a, D: Dataset> Iterator for DependencyPatternMatching<'a, D> {
 	type Item = Quad;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		loop {
 			match self.current.as_mut() {
 				Some(current) => match current.next() {
-					Some(quad) => break Some(self.interface.quad_from_dependency(quad).unwrap()),
+					Some(Meta(Signed(_, quad), _)) => {
+						break Some(self.interface.quad_from_dependency(quad).unwrap())
+					}
 					None => self.current = None,
 				},
 				None => match self.patterns.next() {
 					Some(pattern) => {
 						self.current = Some(
 							self.dataset
-								.signed_matching(Signed(self.sign, pattern))
+								.pattern_matching(Signed(self.sign, pattern))
 								.into_quads(),
 						)
 					}
@@ -79,15 +84,15 @@ impl<'a, M> Iterator for DependencyPatternMatching<'a, M> {
 	}
 }
 
-pub struct PatternMatching<'a, V: Vocabulary, M> {
+pub struct PatternMatching<'a, V: Vocabulary, M, D: Dataset> {
 	interpretation: &'a CompositeInterpretation<V>,
-	dataset_iter: dataset::MatchingQuads<'a, Cause<M>>,
-	dependencies: DependenciesIter<'a, V, M>,
-	current: Option<DependencyPatternMatching<'a, M>>,
+	dataset_iter: dataset::standard::MatchingQuads<'a, Cause<M>>,
+	dependencies: DependenciesIter<'a, V, D>,
+	current: Option<DependencyPatternMatching<'a, D>>,
 	pattern: Signed<pattern::Canonical>,
 }
 
-impl<'a, V: Vocabulary, M> Iterator for PatternMatching<'a, V, M> {
+impl<'a, V: Vocabulary, M, D: Dataset> Iterator for PatternMatching<'a, V, M, D> {
 	type Item = Quad;
 
 	fn next(&mut self) -> Option<Self::Item> {

@@ -10,7 +10,7 @@ rdf-types.workspace = true
 iref.workspace = true
 derivative.workspace = true
 locspan.workspace = true
-langtag = { version = "0.3.3", features = ["serde"] }
+langtag = { workspace = true, features = ["serde"] }
 slab = "0.4.7"
 hashbrown.workspace = true
 im = "15.1.0"

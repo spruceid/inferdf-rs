@@ -1,16 +1,16 @@
 use clap::Parser;
 use contextual::WithContext;
 use inferdf_core::{
-	interpretation::{self, Interpret}, Cause, Sign,
-	Signed,
+	interpretation::{self, Interpret},
+	Cause, Sign, Signed,
 };
 use inferdf_inference::{
+	builder::{self, Builder},
 	semantics::{self, inference::Rule},
-	builder::{self, Builder}
 };
 use locspan::Meta;
 use nquads_syntax::Parse;
-use rdf_types::{IndexVocabulary, MapLiteral, InsertIntoVocabulary};
+use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral};
 use std::path::PathBuf;
 
 #[derive(Parser)]

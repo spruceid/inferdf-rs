@@ -5,20 +5,20 @@ use rdf_types::Vocabulary;
 use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::{self, CompositeInterpretation, Interpretation},
-	Cause, Sign, Triple,
+	Sign, Triple,
 };
 
-pub struct Dependency<V: Vocabulary, M> {
+pub struct Dependency<V: Vocabulary, D> {
 	interpretation: Interpretation<V>,
-	dataset: Dataset<Cause<M>>,
+	dataset: D,
 }
 
-impl<V: Vocabulary, M> Dependency<V, M> {
+impl<V: Vocabulary, D> Dependency<V, D> {
 	pub fn interpretation(&self) -> &Interpretation<V> {
 		&self.interpretation
 	}
 
-	pub fn dataset(&self) -> &Dataset<Cause<M>> {
+	pub fn dataset(&self) -> &D {
 		&self.dataset
 	}
 }
@@ -31,9 +31,15 @@ impl<V: Vocabulary, M> interpretation::composite::Dependency<V> for Dependency<V
 
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct Dependencies<V: Vocabulary, M>(HashMap<usize, Dependency<V, M>>);
+pub struct Dependencies<V: Vocabulary, D>(HashMap<usize, Dependency<V, D>>);
 
-impl<V: Vocabulary, M> Dependencies<V, M> {
+impl<V: Vocabulary, D> Dependencies<V, D> {
+	pub fn iter(&self) -> DependenciesIter<V, D> {
+		DependenciesIter(self.0.iter())
+	}
+}
+
+impl<V: Vocabulary, D: Dataset> Dependencies<V, D> {
 	/// Filter the given signed triple by lookgin for a similar triple in the
 	/// dependencies datasets.
 	///
@@ -49,7 +55,7 @@ impl<V: Vocabulary, M> Dependencies<V, M> {
 	) -> Result<bool, dataset::Contradiction> {
 		for (&d, dependency) in &self.0 {
 			for dependency_triple in interpretation.dependency_triples(d, triple) {
-				if let Some((_, _, fact)) = dependency.dataset.find_triple(dependency_triple) {
+				if let Some((_, fact)) = dependency.dataset.find_triple(dependency_triple) {
 					if fact.sign() == sign {
 						return Ok(false);
 					} else {
@@ -61,15 +67,11 @@ impl<V: Vocabulary, M> Dependencies<V, M> {
 
 		Ok(true)
 	}
-
-	pub fn iter(&self) -> DependenciesIter<V, M> {
-		DependenciesIter(self.0.iter())
-	}
 }
 
-impl<V: Vocabulary, M> interpretation::composite::Dependencies<V> for Dependencies<V, M> {
-	type Dependency = Dependency<V, M>;
-	type Iter<'a> = DependenciesIter<'a, V, M> where Self: 'a, Self::Dependency: 'a;
+impl<V: Vocabulary, D> interpretation::composite::Dependencies<V> for Dependencies<V, D> {
+	type Dependency = Dependency<V, D>;
+	type Iter<'a> = DependenciesIter<'a, V, D> where Self: 'a, Self::Dependency: 'a;
 
 	fn get(&self, i: usize) -> Option<&Self::Dependency> {
 		self.0.get(&i)
@@ -80,12 +82,12 @@ impl<V: Vocabulary, M> interpretation::composite::Dependencies<V> for Dependenci
 	}
 }
 
-pub struct DependenciesIter<'a, V: Vocabulary, M>(
-	hashbrown::hash_map::Iter<'a, usize, Dependency<V, M>>,
+pub struct DependenciesIter<'a, V: Vocabulary, D>(
+	hashbrown::hash_map::Iter<'a, usize, Dependency<V, D>>,
 );
 
-impl<'a, V: Vocabulary, M> Iterator for DependenciesIter<'a, V, M> {
-	type Item = (usize, &'a Dependency<V, M>);
+impl<'a, V: Vocabulary, D> Iterator for DependenciesIter<'a, V, D> {
+	type Item = (usize, &'a Dependency<V, D>);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.0.next().map(|(i, d)| (*i, d))
