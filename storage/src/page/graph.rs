@@ -11,6 +11,8 @@ pub struct Entry {
 	id: Id,
 	triple_count: u32,
 	triple_page_count: u32,
+	resource_count: u32,
+	resource_page_count: u32,
 	first_page: u32,
 }
 
@@ -49,6 +51,8 @@ impl<V> Encode<V> for Entry {
 		self.id.encode(vocabulary, output)?;
 		self.triple_count.encode(vocabulary, output)?;
 		self.triple_page_count.encode(vocabulary, output)?;
+		self.resource_count.encode(vocabulary, output)?;
+		self.resource_page_count.encode(vocabulary, output)?;
 		self.first_page.encode(vocabulary, output)
 	}
 }
@@ -59,6 +63,8 @@ impl<V> Decode<V> for Entry {
 			id: Id::decode(vocabulary, input)?,
 			triple_count: u32::decode(vocabulary, input)?,
 			triple_page_count: u32::decode(vocabulary, input)?,
+			resource_count: u32::decode(vocabulary, input)?,
+			resource_page_count: u32::decode(vocabulary, input)?,
 			first_page: u32::decode(vocabulary, input)?,
 		})
 	}

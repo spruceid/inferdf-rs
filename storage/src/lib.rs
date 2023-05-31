@@ -5,7 +5,7 @@ mod writer;
 pub use reader::Reader;
 
 /// Byte size of the header.
-pub const HEADER_LEN: usize = 4 * 13;
+pub const HEADER_LEN: usize = 4 * 11;
 
 /// Header tag value.
 pub const HEADER_TAG: [u8; 4] = [b'B', b'R', b'D', b'F'];
@@ -24,9 +24,7 @@ pub struct Header {
 	pub literal_count: u32,
 	pub literal_page_count: u32,
 	pub graph_count: u32,
-	pub graph_page_count: u32,
-	pub default_graph_triple_count: u32,
-	pub default_graph_triple_page_count: u32,
+	pub graph_page_count: u32
 }
 
 /// Header tag, used to recognize the file format.

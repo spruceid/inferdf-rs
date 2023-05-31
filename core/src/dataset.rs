@@ -13,22 +13,18 @@ pub struct Contradiction(pub Triple);
 pub type Fact<M> = Meta<Signed<Quad>, M>;
 
 /// RDF dataset.
-pub trait Dataset {
-	type Metadata;
+pub trait Dataset<'a>: Clone {
+	type Metadata: 'a;
 
-	type Graph<'a>: Graph<'a, Metadata = Self::Metadata>
-	where
-		Self: 'a;
+	type Graph: Graph<'a, Metadata = Self::Metadata>;
 
-	type Graphs<'a>: Iterator<Item = (Option<Id>, Self::Graph<'a>)>
-	where
-		Self: 'a;
+	type Graphs: 'a + Iterator<Item = (Option<Id>, Self::Graph)>;
 
-	fn graphs(&self) -> Self::Graphs<'_>;
+	fn graphs(&self) -> Self::Graphs;
 
-	fn graph(&self, id: Option<Id>) -> Option<Self::Graph<'_>>;
+	fn graph(&self, id: Option<Id>) -> Option<Self::Graph>;
 
-	fn resource_facts(&self, id: Id) -> ResourceFacts<Self> {
+	fn resource_facts(&self, id: Id) -> ResourceFacts<'a, Self> {
 		ResourceFacts {
 			id,
 			graph: self.graphs(),
@@ -39,7 +35,7 @@ pub trait Dataset {
 	fn find_triple(
 		&self,
 		triple: Triple,
-	) -> Option<(TripleId, Meta<Signed<Quad>, &Self::Metadata>)> {
+	) -> Option<(TripleId, Meta<Signed<Quad>, &'a Self::Metadata>)> {
 		for (g, graph) in self.graphs() {
 			if let Some((i, Meta(Signed(sign, t), meta))) = graph.find_triple(triple) {
 				return Some((
@@ -56,7 +52,7 @@ pub trait Dataset {
 		&self,
 		pattern: pattern::Canonical,
 		sign: Option<Sign>,
-	) -> Matching<Self> {
+	) -> Matching<'a, Self> {
 		Matching {
 			pattern,
 			graphs: self.graphs(),
@@ -68,11 +64,11 @@ pub trait Dataset {
 	fn pattern_matching(
 		&self,
 		Signed(sign, pattern): Signed<pattern::Canonical>,
-	) -> Matching<Self> {
+	) -> Matching<'a, Self> {
 		self.full_pattern_matching(pattern, Some(sign))
 	}
 
-	fn unsigned_pattern_matching(&self, pattern: pattern::Canonical) -> Matching<Self> {
+	fn unsigned_pattern_matching(&self, pattern: pattern::Canonical) -> Matching<'a, Self> {
 		self.full_pattern_matching(pattern, None)
 	}
 }
@@ -92,13 +88,13 @@ impl TripleId {
 	}
 }
 
-pub struct ResourceFacts<'a, D: 'a + ?Sized + Dataset> {
+pub struct ResourceFacts<'a, D: Dataset<'a>> {
 	id: Id,
-	graph: D::Graphs<'a>,
-	current: Option<(Option<Id>, graph::ResourceFacts<'a, D::Graph<'a>>)>,
+	graph: D::Graphs,
+	current: Option<(Option<Id>, graph::ResourceFacts<'a, D::Graph>)>,
 }
 
-impl<'a, D: ?Sized + Dataset> ResourceFacts<'a, D> {
+impl<'a, D: Dataset<'a>> ResourceFacts<'a, D> {
 	pub fn is_empty(&mut self) -> bool {
 		loop {
 			match self.current.as_mut() {
@@ -118,7 +114,7 @@ impl<'a, D: ?Sized + Dataset> ResourceFacts<'a, D> {
 	}
 }
 
-impl<'a, D: 'a + ?Sized + Dataset> Iterator for ResourceFacts<'a, D> {
+impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
 	type Item = (TripleId, Meta<Signed<Quad>, &'a D::Metadata>);
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -142,20 +138,20 @@ impl<'a, D: 'a + ?Sized + Dataset> Iterator for ResourceFacts<'a, D> {
 	}
 }
 
-pub struct Matching<'a, D: 'a + ?Sized + Dataset> {
+pub struct Matching<'a, D: Dataset<'a>> {
 	pattern: pattern::Canonical,
-	graphs: D::Graphs<'a>,
-	current: Option<(Option<Id>, graph::Matching<'a, D::Graph<'a>>)>,
+	graphs: D::Graphs,
+	current: Option<(Option<Id>, graph::Matching<'a, D::Graph>)>,
 	sign: Option<Sign>,
 }
 
-impl<'a, D: 'a + Dataset> Matching<'a, D> {
+impl<'a, D: Dataset<'a>> Matching<'a, D> {
 	pub fn into_quads(self) -> MatchingQuads<'a, D> {
 		MatchingQuads(self)
 	}
 }
 
-impl<'a, D: 'a + Dataset> Iterator for Matching<'a, D> {
+impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> where D::Metadata: 'a {
 	type Item = (TripleId, Meta<Signed<Quad>, &'a D::Metadata>);
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -182,9 +178,9 @@ impl<'a, D: 'a + Dataset> Iterator for Matching<'a, D> {
 	}
 }
 
-pub struct MatchingQuads<'a, D: ?Sized + Dataset>(Matching<'a, D>);
+pub struct MatchingQuads<'a, D: Dataset<'a>>(Matching<'a, D>);
 
-impl<'a, D: Dataset> Iterator for MatchingQuads<'a, D> {
+impl<'a, D: Dataset<'a>> Iterator for MatchingQuads<'a, D> {
 	type Item = Meta<Signed<Quad>, &'a D::Metadata>;
 
 	fn next(&mut self) -> Option<Self::Item> {

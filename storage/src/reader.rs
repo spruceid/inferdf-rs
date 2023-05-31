@@ -45,7 +45,7 @@ impl<V: Vocabulary, R: io::Read> Reader<V, R> {
 	}
 
 	/// Get the resource behind the given identifier.
-	pub fn get_resource(&self, id: Id) -> Option<&page::resource::Entry> {
+	pub fn get_resource(&self, id: Id) -> Option<&page::resource_triples::Entry> {
 		todo!()
 	}
 

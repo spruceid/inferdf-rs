@@ -2,7 +2,7 @@ use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
 use inferdf_core::{
-	interpretation::{self, Interpret},
+	interpretation::{Interpret, InterpretationMut},
 	pattern::{IdOrVar, Instantiate, PatternSubstitution},
 	uninterpreted, Id, Pattern, Signed, Triple,
 };
@@ -41,9 +41,9 @@ impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Rule<T> {
 impl<V: Vocabulary> Interpret<V> for Rule<uninterpreted::Term<V>> {
 	type Interpreted = Rule;
 
-	fn interpret(
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
-		interpretation: &mut impl interpretation::InterpretationMut<V>,
+		interpretation: &mut I,
 	) -> Self::Interpreted {
 		Rule {
 			hypothesis: self.hypothesis.interpret(interpretation),
@@ -82,9 +82,9 @@ impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Hypothesis<T> {
 impl<V: Vocabulary> Interpret<V> for Hypothesis<uninterpreted::Term<V>> {
 	type Interpreted = Hypothesis;
 
-	fn interpret(
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
-		interpretation: &mut impl interpretation::InterpretationMut<V>,
+		interpretation: &mut I,
 	) -> Self::Interpreted {
 		Hypothesis {
 			patterns: self.patterns.interpret(interpretation),
@@ -122,9 +122,9 @@ impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Conclusion<T> {
 impl<V: Vocabulary> Interpret<V> for Conclusion<uninterpreted::Term<V>> {
 	type Interpreted = Conclusion;
 
-	fn interpret(
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
-		interpretation: &mut impl interpretation::InterpretationMut<V>,
+		interpretation: &mut I,
 	) -> Self::Interpreted {
 		Conclusion {
 			statements: self.statements.interpret(interpretation),
@@ -168,9 +168,9 @@ impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for StatementPattern<T> {
 impl<V: Vocabulary> Interpret<V> for StatementPattern<uninterpreted::Term<V>> {
 	type Interpreted = StatementPattern;
 
-	fn interpret(
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
-		interpretation: &mut impl interpretation::InterpretationMut<V>,
+		interpretation: &mut I,
 	) -> Self::Interpreted {
 		match self {
 			Self::Triple(pattern) => StatementPattern::Triple(pattern.interpret(interpretation)),

@@ -27,10 +27,7 @@ impl<V> Encode<V> for Header {
 		self.literal_count.encode(vocabulary, output)?;
 		self.literal_page_count.encode(vocabulary, output)?;
 		self.graph_count.encode(vocabulary, output)?;
-		self.graph_page_count.encode(vocabulary, output)?;
-		self.default_graph_triple_count.encode(vocabulary, output)?;
-		self.default_graph_triple_page_count
-			.encode(vocabulary, output)
+		self.graph_page_count.encode(vocabulary, output)
 	}
 }
 

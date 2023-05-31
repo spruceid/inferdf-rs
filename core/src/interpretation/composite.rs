@@ -6,14 +6,22 @@ use rdf_types::Vocabulary;
 
 use crate::{
 	pattern::{self, IdOrVar, IdOrVarIter},
-	uninterpreted, Id, Pattern, Quad, Triple,
+	uninterpreted, Id, Pattern, Quad, Triple, dataset::Dataset, Cause,
 };
 
-use super::{Contradiction, Interpretation, InterpretationMut, Resource};
+use super::{Contradiction, Interpretation as InterpretationRef, InterpretationMut, local, Resource as AnyResource};
 
-/// Composite interpretation dependency.
+pub use local::Resource;
+
 pub trait Dependency<V: Vocabulary> {
-	fn interpretation(&self) -> &Interpretation<V>;
+	type Metadata;
+
+	type Dataset<'a>: Dataset<'a, Metadata = Cause<Self::Metadata>> where Self: 'a;
+	type Interpretation<'a>: InterpretationRef<'a, V> where Self: 'a;
+
+	fn dataset(&self) -> Self::Dataset<'_>;
+
+	fn interpretation(&self) -> Self::Interpretation<'_>;
 }
 
 /// Composite interpretation dependencies.
@@ -32,20 +40,20 @@ pub trait Dependencies<V: Vocabulary> {
 /// Composite interpretation.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct CompositeInterpretation<V: Vocabulary> {
+pub struct Interpretation<V: Vocabulary> {
 	/// Final interpretation.
-	interpretation: Interpretation<V>,
+	interpretation: local::Interpretation<V>,
 
 	/// Interfaces with dependency interpretations.
 	interfaces: HashMap<usize, Interface>,
 }
 
-impl<V: Vocabulary> CompositeInterpretation<V> {
+impl<V: Vocabulary> Interpretation<V> {
 	pub fn new() -> Self {
 		Self::default()
 	}
 
-	pub fn inner_interpretation(&self) -> &Interpretation<V> {
+	pub fn inner_interpretation(&self) -> &local::Interpretation<V> {
 		&self.interpretation
 	}
 
@@ -144,13 +152,13 @@ impl<V: Vocabulary> CompositeInterpretation<V> {
 						i.target.insert(dependency_id, id);
 
 						// import interpretation inequality constraints.
-						for other_dependency_id in &dependency
+						for other_dependency_id in dependency
 							.interpretation()
 							.get(dependency_id)
 							.unwrap()
-							.different_from
+							.different_from()
 						{
-							if let Some(&other_id) = i.target.get(other_dependency_id) {
+							if let Some(&other_id) = i.target.get(&other_dependency_id) {
 								self.interpretation
 									.get_mut(id)
 									.unwrap()
@@ -294,11 +302,11 @@ impl<V: Vocabulary> CompositeInterpretation<V> {
 }
 
 pub struct WithDependenciesMut<'a, V: Vocabulary, D> {
-	interpretation: &'a mut CompositeInterpretation<V>,
+	interpretation: &'a mut Interpretation<V>,
 	dependencies: &'a D,
 }
 
-impl<'a, V: Vocabulary, D: Dependencies<V>> InterpretationMut<V> for WithDependenciesMut<'a, V, D>
+impl<'a, V: Vocabulary, D: Dependencies<V>> InterpretationMut<'a, V> for WithDependenciesMut<'a, V, D>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,

@@ -4,25 +4,24 @@ use rdf_types::Vocabulary;
 use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::{
-		composite::{DependencyCanonicalPatterns, Interface},
-		CompositeInterpretation,
+		composite::{self, DependencyCanonicalPatterns, Interface},
 	},
 	pattern, Cause, Id, Quad, Sign, Signed,
 };
 
 use crate::semantics;
 
-use super::{Data, DependenciesIter};
+use super::{Data, DependenciesIter, Dependency};
 
-pub struct Context<'a, V: Vocabulary, M, D> {
-	interpretation: &'a mut CompositeInterpretation<V>,
-	data: &'a Data<V, M, D>,
+pub struct Context<'a, V: Vocabulary, D: Dependency<V>> {
+	interpretation: &'a mut composite::Interpretation<V>,
+	data: &'a Data<V, D>,
 }
 
-impl<'a, V: Vocabulary, M, D> Context<'a, V, M, D> {
+impl<'a, V: Vocabulary, D: Dependency<V>> Context<'a, V, D> {
 	pub fn new(
-		interpretation: &'a mut CompositeInterpretation<V>,
-		data: &'a Data<V, M, D>,
+		interpretation: &'a mut composite::Interpretation<V>,
+		data: &'a Data<V, D>,
 	) -> Self {
 		Self {
 			interpretation,
@@ -31,8 +30,8 @@ impl<'a, V: Vocabulary, M, D> Context<'a, V, M, D> {
 	}
 }
 
-impl<'a, V: Vocabulary, M, D: Dataset> semantics::Context for Context<'a, V, M, D> {
-	type PatternMatching<'r> = PatternMatching<'r, V, M, D> where Self: 'r;
+impl<'a, V: Vocabulary, D: Dependency<V>> semantics::Context for Context<'a, V, D> {
+	type PatternMatching<'r> = PatternMatching<'r, V, D> where Self: 'r;
 
 	fn pattern_matching(&self, pattern: Signed<pattern::Canonical>) -> Self::PatternMatching<'_> {
 		PatternMatching {
@@ -49,15 +48,15 @@ impl<'a, V: Vocabulary, M, D: Dataset> semantics::Context for Context<'a, V, M, 
 	}
 }
 
-struct DependencyPatternMatching<'a, D: Dataset> {
-	dataset: &'a D,
+struct DependencyPatternMatching<'a, D: Dataset<'a>> {
+	dataset: D,
 	interface: &'a Interface,
 	patterns: DependencyCanonicalPatterns<'a>,
 	current: Option<dataset::MatchingQuads<'a, D>>,
 	sign: Sign,
 }
 
-impl<'a, D: Dataset> Iterator for DependencyPatternMatching<'a, D> {
+impl<'a, D: Dataset<'a>> Iterator for DependencyPatternMatching<'a, D> {
 	type Item = Quad;
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -84,15 +83,15 @@ impl<'a, D: Dataset> Iterator for DependencyPatternMatching<'a, D> {
 	}
 }
 
-pub struct PatternMatching<'a, V: Vocabulary, M, D: Dataset> {
-	interpretation: &'a CompositeInterpretation<V>,
-	dataset_iter: dataset::standard::MatchingQuads<'a, Cause<M>>,
+pub struct PatternMatching<'a, V: Vocabulary, D: Dependency<V>> {
+	interpretation: &'a composite::Interpretation<V>,
+	dataset_iter: dataset::standard::MatchingQuads<'a, Cause<D::Metadata>>,
 	dependencies: DependenciesIter<'a, V, D>,
-	current: Option<DependencyPatternMatching<'a, D>>,
+	current: Option<DependencyPatternMatching<'a, D::Dataset<'a>>>,
 	pattern: Signed<pattern::Canonical>,
 }
 
-impl<'a, V: Vocabulary, M, D: Dataset> Iterator for PatternMatching<'a, V, M, D> {
+impl<'a, V: Vocabulary, D: Dependency<V>> Iterator for PatternMatching<'a, V, D> {
 	type Item = Quad;
 
 	fn next(&mut self) -> Option<Self::Item> {

@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use inferdf_core::{
 	dataset::{self, Dataset},
-	interpretation::{self, CompositeInterpretation, InterpretationMut},
+	interpretation::{self, InterpretationMut, composite},
 	uninterpreted, Cause, Id, Quad, ReplaceId, Sign, Signed,
 };
 
@@ -51,16 +51,16 @@ impl ReplaceId for QuadStatement {
 	}
 }
 
-pub struct Builder<V: Vocabulary, M, D, S> {
-	interpretation: CompositeInterpretation<V>,
-	data: Data<V, M, D>,
+pub struct Builder<V: Vocabulary, D: Dependency<V>, S> {
+	interpretation: composite::Interpretation<V>,
+	data: Data<V, D>,
 	semantics: S,
 }
 
-impl<V: Vocabulary, M, D, S> Builder<V, M, D, S> {
+impl<V: Vocabulary, D: Dependency<V>, S> Builder<V, D, S> {
 	pub fn new(
 		dependencies: Dependencies<V, D>,
-		interpretation: CompositeInterpretation<V>,
+		interpretation: composite::Interpretation<V>,
 		semantics: S,
 	) -> Self
 	where
@@ -76,16 +76,16 @@ impl<V: Vocabulary, M, D, S> Builder<V, M, D, S> {
 		}
 	}
 
-	pub fn interpretation(&self) -> &CompositeInterpretation<V> {
+	pub fn interpretation(&self) -> &composite::Interpretation<V> {
 		&self.interpretation
 	}
 
-	pub fn dataset(&self) -> &dataset::Standard<Cause<M>> {
+	pub fn dataset(&self) -> &dataset::Standard<Cause<D::Metadata>> {
 		&self.data.set
 	}
 }
 
-impl<V: Vocabulary, M, D, S: Semantics> InterpretationMut<V> for Builder<V, M, D, S>
+impl<'a, V: Vocabulary, D: Dependency<V>, S: Semantics> InterpretationMut<'a, V> for Builder<V, D, S>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,
@@ -96,7 +96,7 @@ where
 	}
 }
 
-impl<V: Vocabulary, M, D, S: Semantics> Builder<V, M, D, S> {
+impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
 	pub fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id
 	where
 		V::Iri: Copy + Eq + Hash,
@@ -118,17 +118,17 @@ impl<V: Vocabulary, M, D, S: Semantics> Builder<V, M, D, S> {
 	}
 }
 
-impl<V: Vocabulary, M, D: Dataset<Metadata = Cause<M>>, S: Semantics> Builder<V, M, D, S> {
+impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
 	/// Insert a new quad in the built dataset.
 	pub fn insert(
 		&mut self,
-		Meta(Signed(sign, quad), cause): dataset::Fact<Cause<M>>,
+		Meta(Signed(sign, quad), cause): dataset::Fact<Cause<D::Metadata>>,
 	) -> Result<(), Contradiction>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
-		M: Clone,
+		D::Metadata: Clone
 	{
 		let mut stack = vec![Meta(Signed(sign, QuadStatement::Quad(quad)), cause)];
 
@@ -204,17 +204,17 @@ impl<V: Vocabulary, M, D: Dataset<Metadata = Cause<M>>, S: Semantics> Builder<V,
 	}
 }
 
-pub struct Data<V: Vocabulary, M, D> {
-	set: dataset::Standard<Cause<M>>,
+pub struct Data<V: Vocabulary, D: Dependency<V>> {
+	set: dataset::Standard<Cause<D::Metadata>>,
 	dependencies: Dependencies<V, D>,
 }
 
-impl<V: Vocabulary, M, D: Dataset<Metadata = Cause<M>>> Data<V, M, D> {
+impl<V: Vocabulary, D: Dependency<V>> Data<V, D> {
 	pub fn resource_facts(
 		&self,
-		interpretation: &CompositeInterpretation<V>,
+		interpretation: &composite::Interpretation<V>,
 		id: Id,
-	) -> ResourceFacts<M, D> {
+	) -> ResourceFacts<D::Metadata, D::Dataset<'_>> {
 		let toplevel = self.set.resource_facts(id);
 		let dependencies = self
 			.dependencies
@@ -244,13 +244,13 @@ impl<V: Vocabulary, M, D: Dataset<Metadata = Cause<M>>> Data<V, M, D> {
 /// Iterator over all the facts about the given resource, and the dependency it comes from.
 ///
 /// Facts are given in the dependency interpretation, not the top level interpretation.
-pub struct ResourceFacts<'a, M, D: Dataset> {
+pub struct ResourceFacts<'a, M, D: Dataset<'a>> {
 	id: Id,
 	toplevel: dataset::standard::ResourceFacts<'a, Cause<M>>,
 	dependencies: Vec<(usize, Id, dataset::ResourceFacts<'a, D>)>,
 }
 
-impl<'a, M, D: Dataset<Metadata = Cause<M>>> Iterator for ResourceFacts<'a, M, D> {
+impl<'a, M, D: Dataset<'a, Metadata = Cause<M>>> Iterator for ResourceFacts<'a, M, D> {
 	type Item = (Option<usize>, Id, dataset::Fact<&'a Cause<M>>);
 
 	fn next(&mut self) -> Option<Self::Item> {

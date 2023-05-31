@@ -1,7 +1,7 @@
 use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
-use crate::{interpretation::Interpret, pattern::Instantiate, Id, ReplaceId};
+use crate::{interpretation::{Interpret, InterpretationMut}, pattern::Instantiate, Id, ReplaceId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Signed<T>(pub Sign, pub T);
@@ -74,9 +74,9 @@ impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Signed<T> {
 impl<V: Vocabulary, T: Interpret<V>> Interpret<V> for Signed<T> {
 	type Interpreted = Signed<T::Interpreted>;
 
-	fn interpret(
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
-		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+		interpretation: &mut I,
 	) -> Self::Interpreted {
 		Signed(self.0, self.1.interpret(interpretation))
 	}

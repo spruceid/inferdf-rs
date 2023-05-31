@@ -52,9 +52,7 @@ impl<V> Decode<V> for Header {
 			literal_count: u32::decode(vocabulary, input)?,
 			literal_page_count: u32::decode(vocabulary, input)?,
 			graph_count: u32::decode(vocabulary, input)?,
-			graph_page_count: u32::decode(vocabulary, input)?,
-			default_graph_triple_count: u32::decode(vocabulary, input)?,
-			default_graph_triple_page_count: u32::decode(vocabulary, input)?,
+			graph_page_count: u32::decode(vocabulary, input)?
 		})
 	}
 }

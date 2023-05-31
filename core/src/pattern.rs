@@ -1,4 +1,4 @@
-use crate::{interpretation::Interpret, uninterpreted, Id, Triple};
+use crate::{interpretation::{Interpret, InterpretationMut}, uninterpreted, Id, Triple};
 
 pub mod map;
 
@@ -71,9 +71,9 @@ impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for IdOrVar<T> {
 impl<V: Vocabulary> Interpret<V> for IdOrVar<uninterpreted::Term<V>> {
 	type Interpreted = IdOrVar;
 
-	fn interpret(
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
-		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+		interpretation: &mut I,
 	) -> Self::Interpreted {
 		match self {
 			Self::Id(term) => IdOrVar::Id(interpretation.insert_term(term)),
@@ -87,9 +87,9 @@ pub type Pattern<T = Id> = rdf_types::Triple<IdOrVar<T>, IdOrVar<T>, IdOrVar<T>>
 impl<V: Vocabulary> Interpret<V> for Pattern<uninterpreted::Term<V>> {
 	type Interpreted = Pattern;
 
-	fn interpret(
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
-		interpretation: &mut impl crate::interpretation::InterpretationMut<V>,
+		interpretation: &mut I,
 	) -> Self::Interpreted {
 		rdf_types::Triple(
 			self.0.interpret(interpretation),
