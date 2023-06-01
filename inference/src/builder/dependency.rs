@@ -6,28 +6,27 @@ use rdf_types::Vocabulary;
 
 use inferdf_core::{
 	dataset::{self, Dataset},
-	Sign, Triple, interpretation::composite
+	interpretation::composite,
+	Module, Sign, Triple,
 };
-
-pub use composite::Dependency;
 
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct Dependencies<V, D> {
 	map: HashMap<usize, D>,
-	v: PhantomData<V>
+	v: PhantomData<V>,
 }
 
 impl<V, D> Dependencies<V, D> {
 	pub fn iter(&self) -> DependenciesIter<V, D> {
 		DependenciesIter {
 			map: self.map.iter(),
-			v: PhantomData
+			v: PhantomData,
 		}
 	}
 }
 
-impl<V: Vocabulary, D: Dependency<V>> Dependencies<V, D> {
+impl<V: Vocabulary, D: Module<V>> Dependencies<V, D> {
 	/// Filter the given signed triple by lookgin for a similar triple in the
 	/// dependencies datasets.
 	///
@@ -57,7 +56,8 @@ impl<V: Vocabulary, D: Dependency<V>> Dependencies<V, D> {
 	}
 }
 
-impl<V: Vocabulary, D: Dependency<V>> composite::Dependencies<V> for Dependencies<V, D> {
+impl<V: Vocabulary, D: Module<V>> composite::Dependencies<V> for Dependencies<V, D> {
+	type Error = D::Error;
 	type Dependency = D;
 	type Iter<'a> = DependenciesIter<'a, V, D> where Self: 'a;
 
@@ -72,10 +72,10 @@ impl<V: Vocabulary, D: Dependency<V>> composite::Dependencies<V> for Dependencie
 
 pub struct DependenciesIter<'a, V, D> {
 	map: hashbrown::hash_map::Iter<'a, usize, D>,
-	v: PhantomData<V>
+	v: PhantomData<V>,
 }
 
-impl<'a, V: Vocabulary, D: Dependency<V>> Iterator for DependenciesIter<'a, V, D> {
+impl<'a, V: Vocabulary, D: Module<V>> Iterator for DependenciesIter<'a, V, D> {
 	type Item = (usize, &'a D);
 
 	fn next(&mut self) -> Option<Self::Item> {

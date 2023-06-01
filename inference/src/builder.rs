@@ -1,11 +1,12 @@
+use indexmap::IndexSet;
 use locspan::Meta;
 use rdf_types::Vocabulary;
 use std::hash::Hash;
 
 use inferdf_core::{
 	dataset::{self, Dataset},
-	interpretation::{self, InterpretationMut, composite},
-	uninterpreted, Cause, Id, Quad, ReplaceId, Sign, Signed,
+	interpretation::{self, composite, InterpretationMut},
+	uninterpreted, Entailment, Id, Module, Quad, ReplaceId, Sign, Signed,
 };
 
 use crate::semantics::Semantics;
@@ -51,13 +52,14 @@ impl ReplaceId for QuadStatement {
 	}
 }
 
-pub struct Builder<V: Vocabulary, D: Dependency<V>, S> {
+pub struct Builder<V: Vocabulary, D: Module<V>, S> {
 	interpretation: composite::Interpretation<V>,
 	data: Data<V, D>,
 	semantics: S,
+	entailments: IndexSet<Entailment>,
 }
 
-impl<V: Vocabulary, D: Dependency<V>, S> Builder<V, D, S> {
+impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 	pub fn new(
 		dependencies: Dependencies<V, D>,
 		interpretation: composite::Interpretation<V>,
@@ -73,6 +75,7 @@ impl<V: Vocabulary, D: Dependency<V>, S> Builder<V, D, S> {
 				dependencies,
 			},
 			semantics,
+			entailments: IndexSet::new(),
 		}
 	}
 
@@ -80,55 +83,74 @@ impl<V: Vocabulary, D: Dependency<V>, S> Builder<V, D, S> {
 		&self.interpretation
 	}
 
-	pub fn dataset(&self) -> &dataset::Standard<Cause<D::Metadata>> {
+	pub fn dataset(&self) -> &dataset::Standard {
 		&self.data.set
 	}
 }
 
-impl<'a, V: Vocabulary, D: Dependency<V>, S: Semantics> InterpretationMut<'a, V> for Builder<V, D, S>
+impl<'a, V: Vocabulary, D: Module<V>, S: Semantics> InterpretationMut<'a, V> for Builder<V, D, S>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,
 	V::Literal: Copy + Eq + Hash,
 {
-	fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id {
-		self.insert_term(term)
+	type Error = D::Error;
+
+	fn insert_term(&mut self, vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, Self::Error> {
+		self.insert_term(vocabulary, term)
 	}
 }
 
-impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
-	pub fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id
+impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
+	pub fn insert_term(&mut self, vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
 		self.interpretation
-			.insert_term(&self.data.dependencies, term)
+			.insert_term(vocabulary, &self.data.dependencies, term)
 	}
 
-	pub fn insert_quad(&mut self, quad: uninterpreted::Quad<V>) -> Quad
+	pub fn insert_quad(&mut self, vocabulary: &mut V, quad: uninterpreted::Quad<V>) -> Result<Quad, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
 		self.interpretation
-			.insert_quad(&self.data.dependencies, quad)
+			.insert_quad(vocabulary, &self.data.dependencies, quad)
 	}
 }
 
-impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
+pub enum Error<E> {
+	Contradiction(Contradiction),
+	Dependency(E)
+}
+
+impl<E> From<dataset::Contradiction> for Error<E> {
+	fn from(value: dataset::Contradiction) -> Self {
+		Self::Contradiction(value.into())
+	}
+}
+
+impl<E> From<interpretation::Contradiction> for Error<E> {
+	fn from(value: interpretation::Contradiction) -> Self {
+		Self::Contradiction(value.into())
+	}
+}
+
+impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 	/// Insert a new quad in the built dataset.
 	pub fn insert(
 		&mut self,
-		Meta(Signed(sign, quad), cause): dataset::Fact<Cause<D::Metadata>>,
-	) -> Result<(), Contradiction>
+		vocabulary: &mut V,
+		Meta(Signed(sign, quad), cause): dataset::Fact,
+	) -> Result<(), Error<D::Error>>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
-		D::Metadata: Clone
 	{
 		let mut stack = vec![Meta(Signed(sign, QuadStatement::Quad(quad)), cause)];
 
@@ -141,7 +163,6 @@ impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
 						.dependencies
 						.filter(&self.interpretation, triple, sign)?
 					{
-						let meta = cause.metadata().clone();
 						let (_, _, inserted) =
 							self.data.set.insert(Meta(Signed(sign, quad), cause))?;
 
@@ -150,11 +171,9 @@ impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
 							self.semantics.deduce(
 								&mut context,
 								Signed(sign, triple),
-								|Signed(sign, statement)| {
-									stack.push(Meta(
-										Signed(sign, statement.with_graph(g)),
-										Cause::Entailed(meta.clone()),
-									))
+								|e| self.entailments.insert_full(e).0 as u32,
+								|Meta(Signed(sign, statement), cause)| {
+									stack.push(Meta(Signed(sign, statement.with_graph(g)), cause))
 								},
 							)
 						}
@@ -171,25 +190,23 @@ impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
 						})?;
 					stack.replace_id(b, a);
 
-					for (d, _, Meta(Signed(sign, quad), cause)) in
+					for (d, _, Meta(Signed(sign, quad), _)) in
 						self.data.resource_facts(&self.interpretation, a)
 					{
 						let triple = self.interpretation.import_triple(
+							vocabulary,
 							&self.data.dependencies,
 							d,
 							quad.into_triple().0,
-						);
+						).map_err(Error::Dependency)?;
 
-						let meta = cause.metadata();
 						let mut context = Context::new(&mut self.interpretation, &self.data);
 						self.semantics.deduce(
 							&mut context,
 							Signed(sign, triple),
-							|Signed(sign, statement)| {
-								stack.push(Meta(
-									Signed(sign, statement.with_graph(g)),
-									Cause::Entailed(meta.clone()),
-								))
+							|e| self.entailments.insert_full(e).0 as u32,
+							|Meta(Signed(sign, statement), cause)| {
+								stack.push(Meta(Signed(sign, statement.with_graph(g)), cause))
 							},
 						);
 					}
@@ -204,17 +221,17 @@ impl<V: Vocabulary, D: Dependency<V>, S: Semantics> Builder<V, D, S> {
 	}
 }
 
-pub struct Data<V: Vocabulary, D: Dependency<V>> {
-	set: dataset::Standard<Cause<D::Metadata>>,
+pub struct Data<V: Vocabulary, D: Module<V>> {
+	set: dataset::Standard,
 	dependencies: Dependencies<V, D>,
 }
 
-impl<V: Vocabulary, D: Dependency<V>> Data<V, D> {
+impl<V: Vocabulary, D: Module<V>> Data<V, D> {
 	pub fn resource_facts(
 		&self,
 		interpretation: &composite::Interpretation<V>,
 		id: Id,
-	) -> ResourceFacts<D::Metadata, D::Dataset<'_>> {
+	) -> ResourceFacts<D::Dataset<'_>> {
 		let toplevel = self.set.resource_facts(id);
 		let dependencies = self
 			.dependencies
@@ -244,14 +261,14 @@ impl<V: Vocabulary, D: Dependency<V>> Data<V, D> {
 /// Iterator over all the facts about the given resource, and the dependency it comes from.
 ///
 /// Facts are given in the dependency interpretation, not the top level interpretation.
-pub struct ResourceFacts<'a, M, D: Dataset<'a>> {
+pub struct ResourceFacts<'a, D: Dataset<'a>> {
 	id: Id,
-	toplevel: dataset::standard::ResourceFacts<'a, Cause<M>>,
+	toplevel: dataset::standard::ResourceFacts<'a>,
 	dependencies: Vec<(usize, Id, dataset::ResourceFacts<'a, D>)>,
 }
 
-impl<'a, M, D: Dataset<'a, Metadata = Cause<M>>> Iterator for ResourceFacts<'a, M, D> {
-	type Item = (Option<usize>, Id, dataset::Fact<&'a Cause<M>>);
+impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
+	type Item = (Option<usize>, Id, dataset::Fact);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.toplevel

@@ -1,11 +1,12 @@
 pub mod rule;
 
 use hashbrown::HashMap;
+use locspan::Meta;
 pub use rule::{Path, Rule};
 
 use inferdf_core::{
 	pattern::{self, Instantiate, Matching},
-	IteratorSearch, Signed, Triple,
+	Cause, Entailment, IteratorSearch, Signed, Triple,
 };
 
 use self::rule::TripleStatement;
@@ -52,10 +53,17 @@ impl System {
 		&self,
 		context: &mut impl Context,
 		triple: Signed<Triple>,
-		mut f: impl FnMut(Signed<TripleStatement>),
+		mut entailment_index: impl FnMut(Entailment) -> u32,
+		mut new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
 	) {
 		for &path in self.paths.get(triple) {
-			self.deduce_from(context, triple, path, &mut f)
+			self.deduce_from(
+				context,
+				triple,
+				path,
+				&mut entailment_index,
+				&mut new_triple,
+			)
 		}
 	}
 
@@ -64,7 +72,8 @@ impl System {
 		context: &mut impl Context,
 		triple: Signed<Triple>,
 		path: Path,
-		f: &mut impl FnMut(Signed<TripleStatement>),
+		entailment_index: &mut impl FnMut(Entailment) -> u32,
+		new_triple: &mut impl FnMut(Meta<Signed<TripleStatement>, Cause>),
 	) {
 		let rule = self.get(path.rule).unwrap();
 		let pattern = rule.hypothesis.patterns[path.pattern];
@@ -116,9 +125,14 @@ impl System {
 					})
 					.collect();
 
-				statements.into_iter()
+				let cause = Cause::Entailed(entailment_index(Entailment::new(
+					rule.id,
+					substitution.into_vec(),
+				)));
+
+				statements.into_iter().map(move |s| Meta(s, cause))
 			})
-			.for_each(f)
+			.for_each(new_triple)
 	}
 }
 
@@ -127,8 +141,9 @@ impl Semantics for System {
 		&self,
 		context: &mut impl Context,
 		triple: Signed<Triple>,
-		f: impl FnMut(Signed<TripleStatement>),
+		entailment_index: impl FnMut(Entailment) -> u32,
+		new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
 	) {
-		self.deduce(context, triple, f)
+		self.deduce(context, triple, entailment_index, new_triple)
 	}
 }

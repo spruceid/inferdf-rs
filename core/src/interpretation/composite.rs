@@ -6,27 +6,20 @@ use rdf_types::Vocabulary;
 
 use crate::{
 	pattern::{self, IdOrVar, IdOrVarIter},
-	uninterpreted, Id, Pattern, Quad, Triple, dataset::Dataset, Cause,
+	uninterpreted, Id, Module, Pattern, Quad, Triple, IteratorWith,
 };
 
-use super::{Contradiction, Interpretation as InterpretationRef, InterpretationMut, local, Resource as AnyResource};
+use super::{
+	local, Contradiction, Interpretation as InterpretationRef, InterpretationMut,
+	Resource as AnyResource,
+};
 
 pub use local::Resource;
 
-pub trait Dependency<V: Vocabulary> {
-	type Metadata;
-
-	type Dataset<'a>: Dataset<'a, Metadata = Cause<Self::Metadata>> where Self: 'a;
-	type Interpretation<'a>: InterpretationRef<'a, V> where Self: 'a;
-
-	fn dataset(&self) -> Self::Dataset<'_>;
-
-	fn interpretation(&self) -> Self::Interpretation<'_>;
-}
-
 /// Composite interpretation dependencies.
 pub trait Dependencies<V: Vocabulary> {
-	type Dependency: Dependency<V>;
+	type Error;
+	type Dependency: Module<V, Error = Self::Error>;
 	type Iter<'a>: Iterator<Item = (usize, &'a Self::Dependency)>
 	where
 		Self: 'a,
@@ -79,12 +72,13 @@ impl<V: Vocabulary> Interpretation<V> {
 	}
 
 	/// Import a resource in the composite interpretation.
-	pub fn import_resource(
+	pub fn import_resource<D: Dependencies<V>>(
 		&mut self,
-		dependencies: &impl Dependencies<V>,
+		vocabulary: &mut V,
+		dependencies: &D,
 		d: Option<usize>,
 		id: Id,
-	) -> Id
+	) -> Result<Id, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
@@ -94,11 +88,11 @@ impl<V: Vocabulary> Interpretation<V> {
 			Some(d) => {
 				let interface = self.interfaces.entry(d).or_default();
 				match interface.target.get(&id) {
-					Some(imported_id) => *imported_id,
+					Some(imported_id) => Ok(*imported_id),
 					None => {
 						let dependency = dependencies.get(d).unwrap();
-						match dependency.interpretation().terms_of(id).next() {
-							Some(term) => self.insert_term(dependencies, term),
+						match dependency.interpretation().terms_of(id)?.next_with(vocabulary) {
+							Some(term) => self.insert_term(vocabulary, dependencies, term),
 							None => {
 								todo!()
 							}
@@ -106,46 +100,48 @@ impl<V: Vocabulary> Interpretation<V> {
 					}
 				}
 			}
-			None => id,
+			None => Ok(id),
 		}
 	}
 
-	pub fn import_triple(
+	pub fn import_triple<D: Dependencies<V>>(
 		&mut self,
-		dependencies: &impl Dependencies<V>,
+		vocabulary: &mut V,
+		dependencies: &D,
 		d: Option<usize>,
 		triple: Triple,
-	) -> Triple
+	) -> Result<Triple, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
-		Triple::new(
-			self.import_resource(dependencies, d, triple.0),
-			self.import_resource(dependencies, d, triple.1),
-			self.import_resource(dependencies, d, triple.2),
-		)
+		Ok(Triple::new(
+			self.import_resource(vocabulary, dependencies, d, triple.0)?,
+			self.import_resource(vocabulary, dependencies, d, triple.1)?,
+			self.import_resource(vocabulary, dependencies, d, triple.2)?,
+		))
 	}
 
-	pub fn insert_term(
+	pub fn insert_term<D: Dependencies<V>>(
 		&mut self,
-		dependencies: &impl Dependencies<V>,
+		vocabulary: &mut V,
+		dependencies: &D,
 		term: uninterpreted::Term<V>,
-	) -> Id
+	) -> Result<Id, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
 		match self.term_interpretation(term) {
-			Some(id) => id,
+			Some(id) => Ok(id),
 			None => {
 				let id = self.interpretation.insert_term(term);
 
 				for (d, dependency) in dependencies.iter() {
 					if let Some(dependency_id) =
-						dependency.interpretation().term_interpretation(term)
+						dependency.interpretation().term_interpretation(vocabulary, term)?
 					{
 						let i = self.interfaces.entry(d).or_default();
 						i.source.insert(id, vec![dependency_id]);
@@ -154,7 +150,7 @@ impl<V: Vocabulary> Interpretation<V> {
 						// import interpretation inequality constraints.
 						for other_dependency_id in dependency
 							.interpretation()
-							.get(dependency_id)
+							.get(dependency_id)?
 							.unwrap()
 							.different_from()
 						{
@@ -173,33 +169,35 @@ impl<V: Vocabulary> Interpretation<V> {
 						}
 
 						// import all known representations.
-						for other_term in dependency.interpretation().terms_of(dependency_id) {
+						let mut terms = dependency.interpretation().terms_of(dependency_id)?;
+						while let Some(other_term) = terms.next_with(vocabulary) {
 							self.interpretation.set_term_interpretation(other_term, id);
 						}
 					}
 				}
 
-				id
+				Ok(id)
 			}
 		}
 	}
 
-	pub fn insert_quad(
+	pub fn insert_quad<D: Dependencies<V>>(
 		&mut self,
-		dependencies: &impl Dependencies<V>,
+		vocabulary: &mut V,
+		dependencies: &D,
 		rdf_types::Quad(s, p, o, g): uninterpreted::Quad<V>,
-	) -> Quad
+	) -> Result<Quad, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
-		rdf_types::Quad(
-			self.insert_term(dependencies, s),
-			self.insert_term(dependencies, p),
-			self.insert_term(dependencies, o),
-			g.map(|g| self.insert_term(dependencies, g)),
-		)
+		Ok(rdf_types::Quad(
+			self.insert_term(vocabulary, dependencies, s)?,
+			self.insert_term(vocabulary, dependencies, p)?,
+			self.insert_term(vocabulary, dependencies, o)?,
+			g.map(|g| self.insert_term(vocabulary, dependencies, g)).transpose()?,
+		))
 	}
 
 	/// Merge the two given interpreted resources.
@@ -306,14 +304,17 @@ pub struct WithDependenciesMut<'a, V: Vocabulary, D> {
 	dependencies: &'a D,
 }
 
-impl<'a, V: Vocabulary, D: Dependencies<V>> InterpretationMut<'a, V> for WithDependenciesMut<'a, V, D>
+impl<'a, V: Vocabulary, D: Dependencies<V>> InterpretationMut<'a, V>
+	for WithDependenciesMut<'a, V, D>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,
 	V::Literal: Copy + Eq + Hash,
 {
-	fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id {
-		self.interpretation.insert_term(self.dependencies, term)
+	type Error = D::Error;
+
+	fn insert_term(&mut self, vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, Self::Error> {
+		self.interpretation.insert_term(vocabulary, self.dependencies, term)
 	}
 }
 

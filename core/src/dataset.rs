@@ -1,6 +1,6 @@
 use locspan::Meta;
 
-use crate::{pattern, Id, Quad, Sign, Signed, Triple};
+use crate::{pattern, Cause, Id, Quad, Sign, Signed, Triple};
 
 pub mod graph;
 pub mod standard;
@@ -10,13 +10,11 @@ pub use standard::Standard;
 
 pub struct Contradiction(pub Triple);
 
-pub type Fact<M> = Meta<Signed<Quad>, M>;
+pub type Fact = Meta<Signed<Quad>, Cause>;
 
 /// RDF dataset.
 pub trait Dataset<'a>: Clone {
-	type Metadata: 'a;
-
-	type Graph: Graph<'a, Metadata = Self::Metadata>;
+	type Graph: Graph<'a>;
 
 	type Graphs: 'a + Iterator<Item = (Option<Id>, Self::Graph)>;
 
@@ -32,10 +30,7 @@ pub trait Dataset<'a>: Clone {
 		}
 	}
 
-	fn find_triple(
-		&self,
-		triple: Triple,
-	) -> Option<(TripleId, Meta<Signed<Quad>, &'a Self::Metadata>)> {
+	fn find_triple(&self, triple: Triple) -> Option<(TripleId, Meta<Signed<Quad>, Cause>)> {
 		for (g, graph) in self.graphs() {
 			if let Some((i, Meta(Signed(sign, t), meta))) = graph.find_triple(triple) {
 				return Some((
@@ -115,7 +110,7 @@ impl<'a, D: Dataset<'a>> ResourceFacts<'a, D> {
 }
 
 impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
-	type Item = (TripleId, Meta<Signed<Quad>, &'a D::Metadata>);
+	type Item = (TripleId, Meta<Signed<Quad>, Cause>);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		loop {
@@ -151,8 +146,8 @@ impl<'a, D: Dataset<'a>> Matching<'a, D> {
 	}
 }
 
-impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> where D::Metadata: 'a {
-	type Item = (TripleId, Meta<Signed<Quad>, &'a D::Metadata>);
+impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> {
+	type Item = (TripleId, Meta<Signed<Quad>, Cause>);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		loop {
@@ -181,7 +176,7 @@ impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> where D::Metadata: 'a {
 pub struct MatchingQuads<'a, D: Dataset<'a>>(Matching<'a, D>);
 
 impl<'a, D: Dataset<'a>> Iterator for MatchingQuads<'a, D> {
-	type Item = Meta<Signed<Quad>, &'a D::Metadata>;
+	type Item = Meta<Signed<Quad>, Cause>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.0.next().map(|(_, q)| q)

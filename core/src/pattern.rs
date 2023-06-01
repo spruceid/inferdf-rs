@@ -1,4 +1,7 @@
-use crate::{interpretation::{Interpret, InterpretationMut}, uninterpreted, Id, Triple};
+use crate::{
+	interpretation::{Interpret, InterpretationMut},
+	uninterpreted, Id, Triple,
+};
 
 pub mod map;
 
@@ -73,11 +76,12 @@ impl<V: Vocabulary> Interpret<V> for IdOrVar<uninterpreted::Term<V>> {
 
 	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
+		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Self::Interpreted {
+	) -> Result<Self::Interpreted, I::Error> {
 		match self {
-			Self::Id(term) => IdOrVar::Id(interpretation.insert_term(term)),
-			Self::Var(x) => IdOrVar::Var(x),
+			Self::Id(term) => Ok(IdOrVar::Id(interpretation.insert_term(vocabulary, term)?)),
+			Self::Var(x) => Ok(IdOrVar::Var(x)),
 		}
 	}
 }
@@ -89,13 +93,14 @@ impl<V: Vocabulary> Interpret<V> for Pattern<uninterpreted::Term<V>> {
 
 	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
+		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Self::Interpreted {
-		rdf_types::Triple(
-			self.0.interpret(interpretation),
-			self.1.interpret(interpretation),
-			self.2.interpret(interpretation),
-		)
+	) -> Result<Self::Interpreted, I::Error> {
+		Ok(rdf_types::Triple(
+			self.0.interpret(vocabulary, interpretation)?,
+			self.1.interpret(vocabulary, interpretation)?,
+			self.2.interpret(vocabulary, interpretation)?,
+		))
 	}
 }
 
@@ -120,6 +125,12 @@ impl<I: Iterator> Iterator for IdOrVarIter<I> {
 pub enum Canonical {
 	AnySubject(AnySubject),
 	GivenSubject(Id, GivenSubject),
+}
+
+impl From<Triple> for Canonical {
+	fn from(value: Triple) -> Self {
+		Self::from_triple(value)
+	}
 }
 
 impl From<Pattern> for Canonical {
@@ -499,6 +510,14 @@ impl PatternSubstitution {
 
 	pub fn get_or_insert_with(&mut self, x: usize, f: impl FnOnce() -> Id) -> Id {
 		*self.0.entry(x).or_insert_with(f)
+	}
+
+	pub fn into_vec(self) -> Vec<Id> {
+		let mut result = Vec::with_capacity(self.0.len());
+		for i in 0..self.0.len() {
+			result.push(*self.0.get(&i).unwrap())
+		}
+		result
 	}
 }
 

@@ -12,6 +12,7 @@ use crate::builder::QuadStatement;
 /// Inference rule.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Rule<T = Id> {
+	pub id: T,
 	pub hypothesis: Hypothesis<T>,
 	pub conclusion: Conclusion<T>,
 }
@@ -21,6 +22,7 @@ impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Rule
 
 	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
 		Rule {
+			id: self.id.insert_into_vocabulary(vocabulary),
 			hypothesis: self.hypothesis.insert_into_vocabulary(vocabulary),
 			conclusion: self.conclusion.insert_into_vocabulary(vocabulary),
 		}
@@ -32,6 +34,7 @@ impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Rule<T> {
 
 	fn map_literal(self, mut f: impl FnMut(L) -> M) -> Self::Output {
 		Rule {
+			id: self.id.map_literal(&mut f),
 			hypothesis: self.hypothesis.map_literal(&mut f),
 			conclusion: self.conclusion.map_literal(f),
 		}
@@ -43,12 +46,14 @@ impl<V: Vocabulary> Interpret<V> for Rule<uninterpreted::Term<V>> {
 
 	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
+		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Self::Interpreted {
-		Rule {
-			hypothesis: self.hypothesis.interpret(interpretation),
-			conclusion: self.conclusion.interpret(interpretation),
-		}
+	) -> Result<Self::Interpreted, I::Error> {
+		Ok(Rule {
+			id: self.id.interpret(vocabulary, interpretation)?,
+			hypothesis: self.hypothesis.interpret(vocabulary, interpretation)?,
+			conclusion: self.conclusion.interpret(vocabulary, interpretation)?,
+		})
 	}
 }
 
@@ -84,11 +89,12 @@ impl<V: Vocabulary> Interpret<V> for Hypothesis<uninterpreted::Term<V>> {
 
 	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
+		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Self::Interpreted {
-		Hypothesis {
-			patterns: self.patterns.interpret(interpretation),
-		}
+	) -> Result<Self::Interpreted, I::Error> {
+		Ok(Hypothesis {
+			patterns: self.patterns.interpret(vocabulary, interpretation)?,
+		})
 	}
 }
 
@@ -124,11 +130,12 @@ impl<V: Vocabulary> Interpret<V> for Conclusion<uninterpreted::Term<V>> {
 
 	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
+		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Self::Interpreted {
-		Conclusion {
-			statements: self.statements.interpret(interpretation),
-		}
+	) -> Result<Self::Interpreted, I::Error> {
+		Ok(Conclusion {
+			statements: self.statements.interpret(vocabulary, interpretation)?,
+		})
 	}
 }
 
@@ -170,12 +177,13 @@ impl<V: Vocabulary> Interpret<V> for StatementPattern<uninterpreted::Term<V>> {
 
 	fn interpret<'a, I: InterpretationMut<'a, V>>(
 		self,
+		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Self::Interpreted {
+	) -> Result<Self::Interpreted, I::Error> {
 		match self {
-			Self::Triple(pattern) => StatementPattern::Triple(pattern.interpret(interpretation)),
+			Self::Triple(pattern) => Ok(StatementPattern::Triple(pattern.interpret(vocabulary, interpretation)?)),
 			Self::Eq(a, b) => {
-				StatementPattern::Eq(a.interpret(interpretation), b.interpret(interpretation))
+				Ok(StatementPattern::Eq(a.interpret(vocabulary, interpretation)?, b.interpret(vocabulary, interpretation)?))
 			}
 		}
 	}

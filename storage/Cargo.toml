@@ -10,3 +10,5 @@ iref.workspace = true
 rdf-types.workspace = true
 thiserror.workspace = true
 langtag.workspace = true
+derivative.workspace = true
+locspan.workspace = true

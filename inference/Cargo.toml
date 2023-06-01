@@ -14,3 +14,4 @@ locspan.workspace = true
 hashbrown.workspace = true
 contextual.workspace = true
 serde.workspace = true
+indexmap = "1.9.3"

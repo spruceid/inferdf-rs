@@ -5,12 +5,29 @@ pub mod pattern;
 pub mod uninterpreted;
 mod utils;
 
-pub use cause::Cause;
+pub use cause::*;
+pub use dataset::Dataset;
+pub use interpretation::Interpretation;
 pub use pattern::Pattern;
+use rdf_types::Vocabulary;
 pub use utils::*;
 
 pub type Triple = rdf_types::Triple<Id, Id, Id>;
 pub type Quad = rdf_types::Quad<Id, Id, Id, Id>;
+
+pub trait Module<V: Vocabulary> {
+	type Error;
+	type Dataset<'a>: Dataset<'a>
+	where
+		Self: 'a;
+	type Interpretation<'a>: Interpretation<'a, V, Error = Self::Error>
+	where
+		Self: 'a;
+
+	fn dataset(&self) -> Self::Dataset<'_>;
+
+	fn interpretation(&self) -> Self::Interpretation<'_>;
+}
 
 pub trait TripleExt {
 	fn into_pattern(self) -> Pattern;
@@ -41,4 +58,10 @@ impl From<Id> for u32 {
 	fn from(value: Id) -> Self {
 		value.0
 	}
+}
+
+pub trait IteratorWith<V> {
+	type Item;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item>;
 }

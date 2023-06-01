@@ -1,40 +1,23 @@
-#[derive(Debug, Clone)]
-pub enum Cause<M> {
-	Stated(M),
-	Entailed(M),
+use crate::Id;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Cause {
+	Stated(u32),
+	Entailed(u32),
 }
 
-impl<M> Cause<M> {
-	pub fn metadata(&self) -> &M {
-		match self {
-			Self::Stated(m) => m,
-			Self::Entailed(m) => m,
-		}
-	}
+/// Triple entailment.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Entailment {
+	/// Rule identifier.
+	pub rule: Id,
 
-	pub fn into_metadata(self) -> M {
-		match self {
-			Self::Stated(m) => m,
-			Self::Entailed(m) => m,
-		}
-	}
-
-	pub fn as_ref(&self) -> Cause<&M> {
-		match self {
-			Self::Stated(m) => Cause::Stated(m),
-			Self::Entailed(m) => Cause::Entailed(m),
-		}
-	}
+	/// Rule variables substitution.
+	pub substitution: Vec<Id>,
 }
 
-impl<'a, M> Cause<&'a M> {
-	pub fn cloned(&self) -> Cause<M>
-	where
-		M: Clone,
-	{
-		match self {
-			Self::Stated(m) => Cause::Stated((*m).clone()),
-			Self::Entailed(m) => Cause::Entailed((*m).clone()),
-		}
+impl Entailment {
+	pub fn new(rule: Id, substitution: Vec<Id>) -> Self {
+		Self { rule, substitution }
 	}
 }

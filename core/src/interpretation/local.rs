@@ -7,7 +7,7 @@ use slab::Slab;
 
 use crate::{uninterpreted, Id, Quad, Triple};
 
-use super::{InterpretationMut, Contradiction};
+use super::{Contradiction, InterpretationMut};
 
 /// RDF interpretation.
 #[derive(Derivative)]
@@ -25,8 +25,10 @@ where
 	V::BlankId: Copy + Eq + Hash,
 	V::Literal: Copy + Eq + Hash,
 {
-	fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id {
-		self.insert_term(term)
+	type Error = std::convert::Infallible;
+
+	fn insert_term(&mut self, _vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, Self::Error> {
+		Ok(self.insert_term(term))
 	}
 }
 

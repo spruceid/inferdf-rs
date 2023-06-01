@@ -1,8 +1,9 @@
-use inferdf_core::{pattern, Id, Quad, Signed, Triple};
+use inferdf_core::{pattern, Cause, Entailment, Id, Quad, Signed, Triple};
 
 pub mod inference;
 
 use inference::rule::TripleStatement;
+use locspan::Meta;
 
 pub trait Context {
 	type PatternMatching<'a>: 'a + Iterator<Item = Quad>
@@ -19,6 +20,7 @@ pub trait Semantics {
 		&self,
 		context: &mut impl Context,
 		triple: Signed<Triple>,
-		f: impl FnMut(Signed<TripleStatement>),
+		entailment_index: impl FnMut(Entailment) -> u32,
+		new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
 	);
 }

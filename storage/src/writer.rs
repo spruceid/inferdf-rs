@@ -1,15 +1,16 @@
 use std::io::{self, Write};
 
-use inferdf_core::Id;
+use inferdf_core::{Cause, Id, Sign, Signed};
 use iref::{Iri, IriBuf};
 use langtag::LanguageTag;
+use locspan::Meta;
 use rdf_types::{
 	literal,
 	vocabulary::{IriIndex, LanguageTagIndex, LiteralIndex},
 	IriVocabulary, LanguageTagVocabulary, Literal, LiteralVocabulary,
 };
 
-use crate::{Header, Tag, Version, HEADER_TAG, VERSION};
+use crate::{Header, Tag, Version, HEADER_TAG, VERSION, module::{IriPath, LiteralPath}};
 
 pub trait Encode<V> {
 	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error>;
@@ -27,7 +28,8 @@ impl<V> Encode<V> for Header {
 		self.literal_count.encode(vocabulary, output)?;
 		self.literal_page_count.encode(vocabulary, output)?;
 		self.graph_count.encode(vocabulary, output)?;
-		self.graph_page_count.encode(vocabulary, output)
+		self.graph_page_count.encode(vocabulary, output)?;
+		self.default_graph.encode(vocabulary, output)
 	}
 }
 
@@ -43,6 +45,12 @@ impl<V> Encode<V> for Version {
 	}
 }
 
+impl<V> Encode<V> for u8 {
+	fn encode(&self, _vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
+		output.write_all(std::slice::from_ref(self))
+	}
+}
+
 impl<V> Encode<V> for u32 {
 	fn encode(&self, _vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
 		let bytes = self.to_be_bytes();
@@ -54,6 +62,20 @@ impl<V> Encode<V> for Id {
 	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
 		let i: u32 = (*self).into();
 		i.encode(vocabulary, output)
+	}
+}
+
+impl<V> Encode<V> for IriPath {
+	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
+		self.page.encode(vocabulary, output)?;
+		self.index.encode(vocabulary, output)
+	}
+}
+
+impl<V> Encode<V> for LiteralPath {
+	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
+		self.page.encode(vocabulary, output)?;
+		self.index.encode(vocabulary, output)
 	}
 }
 
@@ -73,6 +95,44 @@ impl<V, T: Encode<V>> Encode<V> for Vec<T> {
 		}
 
 		Ok(())
+	}
+}
+
+impl<V, T: Encode<V>, M: Encode<V>> Encode<V> for Meta<T, M> {
+	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
+		self.0.encode(vocabulary, output)?;
+		self.1.encode(vocabulary, output)
+	}
+}
+
+impl<V, T: Encode<V>> Encode<V> for Signed<T> {
+	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
+		self.0.encode(vocabulary, output)?;
+		self.1.encode(vocabulary, output)
+	}
+}
+
+impl<V> Encode<V> for Sign {
+	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
+		match self {
+			Self::Positive => 0u8.encode(vocabulary, output),
+			Self::Negative => 1u8.encode(vocabulary, output),
+		}
+	}
+}
+
+impl<V> Encode<V> for Cause {
+	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error> {
+		match self {
+			Self::Stated(i) => {
+				0u8.encode(vocabulary, output)?;
+				i.encode(vocabulary, output)
+			}
+			Self::Entailed(i) => {
+				1u8.encode(vocabulary, output)?;
+				i.encode(vocabulary, output)
+			}
+		}
 	}
 }
 

@@ -2,7 +2,7 @@ use std::iter::Peekable;
 
 use locspan::Meta;
 
-use crate::{pattern, Id, Sign, Signed, Triple};
+use crate::{pattern, Cause, Id, Sign, Signed, Triple};
 
 pub trait Resource<'a> {
 	type TripleIndexes: 'a + Iterator<Item = u32>;
@@ -15,22 +15,20 @@ pub trait Resource<'a> {
 }
 
 pub trait Graph<'a>: Clone {
-	type Metadata: 'a;
-
+	type Error;
 	type Resource: Resource<'a>;
 
-	type Triples: Iterator<Item = (u32, Meta<Signed<Triple>, &'a Self::Metadata>)>;
+	type Triples: Iterator<Item = Result<(u32, Meta<Signed<Triple>, Cause>), Self::Error>>;
 
-	fn get_resource(&self, id: Id) -> Option<Self::Resource>;
+	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error>;
 
-	fn get_triple(&self, index: u32) -> Option<Meta<Signed<Triple>, &'a Self::Metadata>>;
+	fn get_triple(&self, index: u32) -> Result<Option<Meta<Signed<Triple>, Cause>>, Self::Error>;
 
 	fn triples(&self) -> Self::Triples;
 
-	fn find_triple(
-		&self,
-		triple: Triple,
-	) -> Option<(u32, Meta<Signed<Triple>, &'a Self::Metadata>)>;
+	fn find_triple(&self, triple: Triple) -> Result<Option<(u32, Meta<Signed<Triple>, Cause>)>, Self::Error> {
+		self.unsigned_pattern_matching(triple.into()).next().transpose()
+	}
 
 	fn resource_facts(&self, id: Id) -> ResourceFacts<'a, Self> {
 		match self.get_resource(id) {
@@ -96,7 +94,7 @@ impl<'a, G: Graph<'a>> ResourceFacts<'a, G> {
 }
 
 impl<'a, G: Graph<'a>> Iterator for ResourceFacts<'a, G> {
-	type Item = (u32, Meta<Signed<Triple>, &'a G::Metadata>);
+	type Item = (u32, Meta<Signed<Triple>, Cause>);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
@@ -144,7 +142,7 @@ impl<'a, G: Graph<'a>> Iterator for ResourceFacts<'a, G> {
 pub struct MatchingQuads<'a, G: Graph<'a>>(Matching<'a, G>);
 
 impl<'a, G: Graph<'a>> Iterator for MatchingQuads<'a, G> {
-	type Item = Meta<Signed<Triple>, &'a G::Metadata>;
+	type Item = Meta<Signed<Triple>, Cause>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.0.next().map(|(_, q)| q)
@@ -171,11 +169,16 @@ pub struct Matching<'a, G: Graph<'a>> {
 }
 
 impl<'a, G: Graph<'a>> Iterator for Matching<'a, G> {
-	type Item = (u32, Meta<Signed<Triple>, &'a G::Metadata>);
+	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.inner
-			.find(|(_, Meta(t, _))| self.constraints.filter(*t))
+			.find(|r| {
+				match r {
+					Ok((_, Meta(t, _))) => self.constraints.filter(*t),
+					Err(_) => true
+				}
+			})
 	}
 }
 
@@ -190,40 +193,43 @@ enum RawMatching<'a, G: Graph<'a>> {
 	},
 }
 
-fn get_resource_opt<'a, G: Graph<'a>>(graph: &G, id: Option<Id>) -> Option<Option<G::Resource>> {
+fn get_resource_opt<'a, G: Graph<'a>>(graph: &G, id: Option<Id>) -> Result<Option<Option<G::Resource>>, G::Error> {
 	match id {
-		Some(id) => graph.get_resource(id).map(Some),
-		None => Some(None),
+		Some(id) => Ok(graph.get_resource(id)?.map(Some)),
+		None => Ok(Some(None)),
 	}
 }
 
 impl<'a, G: Graph<'a>> RawMatching<'a, G> {
-	fn new(graph: G, pattern: pattern::Canonical) -> Self {
+	fn new(graph: G, pattern: pattern::Canonical) -> Result<Self, G::Error> {
 		let s = pattern.subject().id();
 		let p = pattern.predicate().id();
 		let o = pattern.object().id();
 
 		if s.is_none() && p.is_none() && o.is_none() {
-			Self::All(graph.triples())
+			Ok(Self::All(graph.triples()))
 		} else {
-			get_resource_opt(&graph, s)
-				.and_then(|s| {
-					get_resource_opt(&graph, p).and_then(|p| {
-						get_resource_opt(&graph, o).map(|o| Self::Constrained {
-							graph,
-							subject: s.map(|r| r.as_subject()),
-							predicate: p.map(|r| r.as_predicate()),
-							object: o.map(|r| r.as_object()),
-						})
-					})
-				})
-				.unwrap_or(Self::None)
+			Ok(get_resource_opt(&graph, s)?
+			.and_then(|s| {
+				get_resource_opt(&graph, p)
+			}).transpose()?
+			.and_then(|p| {
+				get_resource_opt(&graph, o)
+			})
+			.transpose()?
+			.map(|o| Self::Constrained {
+				graph,
+				subject: s.map(|r| r.as_subject()),
+				predicate: p.map(|r| r.as_predicate()),
+				object: o.map(|r| r.as_object()),
+			})
+			.unwrap_or(Self::None))
 		}
 	}
 }
 
 impl<'a, G: Graph<'a>> Iterator for RawMatching<'a, G> {
-	type Item = (u32, Meta<Signed<Triple>, &'a G::Metadata>);
+	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
@@ -289,7 +295,7 @@ impl<'a, G: Graph<'a>> Iterator for RawMatching<'a, G> {
 					state = state.next();
 				}
 
-				candidate.map(|i| (i, graph.get_triple(i).unwrap()))
+				candidate.map(|i| Ok((i, graph.get_triple(i)?.unwrap())))
 			}
 		}
 	}

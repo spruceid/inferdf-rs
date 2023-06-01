@@ -1,5 +1,9 @@
+use std::cmp::Ordering;
+
+use inferdf_core::Id;
+
 use crate::{
-	reader::{self, Decode},
+	module::{self, Decode, IriPath, LiteralPath},
 	writer::Encode,
 };
 
@@ -8,10 +12,53 @@ use crate::{
 /// Resources pages list resources and their known terms.
 pub struct ResourceTermsPage(Vec<Entry>);
 
-pub struct Entry {
-	pub known_iris: Vec<u32>,
-	pub known_literals: Vec<u32>
+impl ResourceTermsPage {
+	pub fn get(&self, i: usize) -> Option<&Entry> {
+		self.0.get(i)
+	}
+
+	pub fn find(&self, id: Id) -> Result<usize, Ordering> {
+		if self.0.is_empty() {
+			Err(Ordering::Equal)
+		} else if self.0[0].id > id {
+			Err(Ordering::Greater)
+		} else if self.0[self.0.len() - 1].id < id {
+			Err(Ordering::Less)
+		} else {
+			match self.0.binary_search_by_key(&id, |e| e.id) {
+				Ok(i) => Ok(i),
+				Err(_) => Err(Ordering::Equal),
+			}
+		}
+	}
 }
+
+pub struct Entry {
+	pub id: Id,
+	pub known_iris: Vec<IriPath>,
+	pub known_literals: Vec<LiteralPath>,
+	pub different_from: Vec<Id>,
+}
+
+impl Entry {
+	pub fn iter_known_iris(&self) -> IriPaths {
+		self.known_iris.iter().copied()
+	}
+
+	pub fn iter_known_literals(&self) -> LiteralPaths {
+		self.known_literals.iter().copied()
+	}
+
+	pub fn iter_different_from(&self) -> DifferentFrom {
+		self.different_from.iter().copied()
+	}
+}
+
+pub type IriPaths<'a> = std::iter::Copied<std::slice::Iter<'a, IriPath>>;
+
+pub type LiteralPaths<'a> = std::iter::Copied<std::slice::Iter<'a, LiteralPath>>;
+
+pub type DifferentFrom<'a> = std::iter::Copied<std::slice::Iter<'a, Id>>;
 
 impl<V> Encode<V> for ResourceTermsPage {
 	fn encode(
@@ -23,9 +70,9 @@ impl<V> Encode<V> for ResourceTermsPage {
 	}
 }
 
-impl<V> Decode<V> for ResourceTermsPage {
-	fn decode(vocabulary: &mut V, input: &mut impl std::io::Read) -> Result<Self, reader::Error> {
-		Ok(Self(Vec::decode(vocabulary, input)?))
+impl Decode for ResourceTermsPage {
+	fn decode(input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+		Ok(Self(Vec::decode(input)?))
 	}
 }
 
@@ -35,16 +82,20 @@ impl<V> Encode<V> for Entry {
 		vocabulary: &V,
 		output: &mut impl std::io::Write,
 	) -> Result<(), std::io::Error> {
+		self.id.encode(vocabulary, output)?;
 		self.known_iris.encode(vocabulary, output)?;
-		self.known_literals.encode(vocabulary, output)
+		self.known_literals.encode(vocabulary, output)?;
+		self.different_from.encode(vocabulary, output)
 	}
 }
 
-impl<V> Decode<V> for Entry {
-	fn decode(vocabulary: &mut V, input: &mut impl std::io::Read) -> Result<Self, reader::Error> {
+impl Decode for Entry {
+	fn decode(input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
 		Ok(Self {
-			known_iris: Vec::decode(vocabulary, input)?,
-			known_literals: Vec::decode(vocabulary, input)?
+			id: Id::decode(input)?,
+			known_iris: Vec::decode(input)?,
+			known_literals: Vec::decode(input)?,
+			different_from: Vec::decode(input)?,
 		})
 	}
 }
