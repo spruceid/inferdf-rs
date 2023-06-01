@@ -27,7 +27,11 @@ where
 {
 	type Error = std::convert::Infallible;
 
-	fn insert_term(&mut self, _vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, Self::Error> {
+	fn insert_term(
+		&mut self,
+		_vocabulary: &mut V,
+		term: uninterpreted::Term<V>,
+	) -> Result<Id, Self::Error> {
 		Ok(self.insert_term(term))
 	}
 }

@@ -55,6 +55,10 @@ pub struct Entry {
 	pub description: Description,
 }
 
+impl Entry {
+	pub const LEN: usize = 4 + Description::LEN;
+}
+
 impl<V> Encode<V> for GraphsPage {
 	fn encode(
 		&self,
@@ -65,9 +69,8 @@ impl<V> Encode<V> for GraphsPage {
 	}
 }
 
-impl<V> DecodeSized<V> for GraphsPage {
+impl DecodeSized for GraphsPage {
 	fn decode_sized(
-		vocabulary: &mut V,
 		input: &mut impl std::io::Read,
 		len: u32,
 	) -> Result<Self, module::decode::Error> {

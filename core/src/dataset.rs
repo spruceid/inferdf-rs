@@ -1,6 +1,6 @@
 use locspan::Meta;
 
-use crate::{pattern, Cause, Id, Quad, Sign, Signed, Triple};
+use crate::{pattern, Cause, FailibleIterator, Id, Quad, Sign, Signed, Triple};
 
 pub mod graph;
 pub mod standard;
@@ -14,13 +14,15 @@ pub type Fact = Meta<Signed<Quad>, Cause>;
 
 /// RDF dataset.
 pub trait Dataset<'a>: Clone {
-	type Graph: Graph<'a>;
+	type Error;
 
-	type Graphs: 'a + Iterator<Item = (Option<Id>, Self::Graph)>;
+	type Graph: Graph<'a, Error = Self::Error>;
+
+	type Graphs: 'a + Iterator<Item = Result<(Option<Id>, Self::Graph), Self::Error>>;
 
 	fn graphs(&self) -> Self::Graphs;
 
-	fn graph(&self, id: Option<Id>) -> Option<Self::Graph>;
+	fn graph(&self, id: Option<Id>) -> Result<Option<Self::Graph>, Self::Error>;
 
 	fn resource_facts(&self, id: Id) -> ResourceFacts<'a, Self> {
 		ResourceFacts {
@@ -30,17 +32,21 @@ pub trait Dataset<'a>: Clone {
 		}
 	}
 
-	fn find_triple(&self, triple: Triple) -> Option<(TripleId, Meta<Signed<Quad>, Cause>)> {
-		for (g, graph) in self.graphs() {
-			if let Some((i, Meta(Signed(sign, t), meta))) = graph.find_triple(triple) {
-				return Some((
+	fn find_triple(
+		&self,
+		triple: Triple,
+	) -> Result<Option<(TripleId, Meta<Signed<Quad>, Cause>)>, Self::Error> {
+		for g in self.graphs() {
+			let (g, graph) = g?;
+			if let Some((i, Meta(Signed(sign, t), meta))) = graph.find_triple(triple)? {
+				return Ok(Some((
 					TripleId::new(g, i),
 					Meta(Signed(sign, t.into_quad(g)), meta),
-				));
+				)));
 			}
 		}
 
-		None
+		Ok(None)
 	}
 
 	fn full_pattern_matching(
@@ -90,19 +96,50 @@ pub struct ResourceFacts<'a, D: Dataset<'a>> {
 }
 
 impl<'a, D: Dataset<'a>> ResourceFacts<'a, D> {
-	pub fn is_empty(&mut self) -> bool {
+	pub fn is_empty(&mut self) -> Result<bool, D::Error> {
 		loop {
 			match self.current.as_mut() {
 				Some((_, current)) => {
 					if current.is_empty() {
 						self.current = None
 					} else {
-						break false;
+						break Ok(false);
 					}
 				}
 				None => match self.graph.next() {
-					Some((g, graph)) => self.current = Some((g, graph.resource_facts(self.id))),
-					None => break true,
+					Some(Err(e)) => break Err(e),
+					Some(Ok((g, graph))) => {
+						self.current = Some((g, graph.resource_facts(self.id)?))
+					}
+					None => break Ok(true),
+				},
+			}
+		}
+	}
+}
+
+impl<'a, D: Dataset<'a>> FailibleIterator for ResourceFacts<'a, D> {
+	type Error = D::Error;
+	type Item = (TripleId, Meta<Signed<Quad>, Cause>);
+
+	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
+		loop {
+			match self.current.as_mut() {
+				Some((g, current)) => match current.next().transpose()? {
+					Some((i, Meta(Signed(sign, t), meta))) => {
+						break Ok(Some((
+							TripleId::new(*g, i),
+							Meta(Signed(sign, t.into_quad(*g)), meta),
+						)))
+					}
+					None => self.current = None,
+				},
+				None => match self.graph.next() {
+					Some(Err(e)) => break Err(e),
+					Some(Ok((g, graph))) => {
+						self.current = Some((g, graph.resource_facts(self.id)?))
+					}
+					None => break Ok(None),
 				},
 			}
 		}
@@ -110,26 +147,10 @@ impl<'a, D: Dataset<'a>> ResourceFacts<'a, D> {
 }
 
 impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
-	type Item = (TripleId, Meta<Signed<Quad>, Cause>);
+	type Item = Result<(TripleId, Meta<Signed<Quad>, Cause>), D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		loop {
-			match self.current.as_mut() {
-				Some((g, current)) => match current.next() {
-					Some((i, Meta(Signed(sign, t), meta))) => {
-						break Some((
-							TripleId::new(*g, i),
-							Meta(Signed(sign, t.into_quad(*g)), meta),
-						))
-					}
-					None => self.current = None,
-				},
-				None => match self.graph.next() {
-					Some((g, graph)) => self.current = Some((g, graph.resource_facts(self.id))),
-					None => break None,
-				},
-			}
-		}
+		self.try_next().transpose()
 	}
 }
 
@@ -146,39 +167,58 @@ impl<'a, D: Dataset<'a>> Matching<'a, D> {
 	}
 }
 
-impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> {
+impl<'a, D: Dataset<'a>> FailibleIterator for Matching<'a, D> {
 	type Item = (TripleId, Meta<Signed<Quad>, Cause>);
+	type Error = D::Error;
 
-	fn next(&mut self) -> Option<Self::Item> {
+	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
 		loop {
 			match self.current.as_mut() {
-				Some((g, m)) => match m.next() {
+				Some((g, m)) => match m.next().transpose()? {
 					Some((i, Meta(Signed(sign, triple), meta))) => {
-						break Some((
+						break Ok(Some((
 							TripleId::new(*g, i),
 							Meta(Signed(sign, triple.into_quad(*g)), meta),
-						))
+						)))
 					}
 					None => self.current = None,
 				},
 				None => match self.graphs.next() {
-					Some((g, graph)) => {
+					Some(Err(e)) => break Err(e),
+					Some(Ok((g, graph))) => {
 						self.current =
-							Some((g, graph.full_pattern_matching(self.pattern, self.sign)))
+							Some((g, graph.full_pattern_matching(self.pattern, self.sign)?))
 					}
-					None => break None,
+					None => break Ok(None),
 				},
 			}
 		}
 	}
 }
 
-pub struct MatchingQuads<'a, D: Dataset<'a>>(Matching<'a, D>);
-
-impl<'a, D: Dataset<'a>> Iterator for MatchingQuads<'a, D> {
-	type Item = Meta<Signed<Quad>, Cause>;
+impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> {
+	type Item = Result<(TripleId, Meta<Signed<Quad>, Cause>), D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next().map(|(_, q)| q)
+		self.try_next().transpose()
+	}
+}
+
+pub struct MatchingQuads<'a, D: Dataset<'a>>(Matching<'a, D>);
+
+impl<'a, D: Dataset<'a>> FailibleIterator for MatchingQuads<'a, D> {
+	type Item = Meta<Signed<Quad>, Cause>;
+	type Error = D::Error;
+
+	fn try_next(&mut self) -> Result<Option<Self::Item>, D::Error> {
+		Ok(self.0.try_next()?.map(|(_, q)| q))
+	}
+}
+
+impl<'a, D: Dataset<'a>> Iterator for MatchingQuads<'a, D> {
+	type Item = Result<Meta<Signed<Quad>, Cause>, D::Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.try_next().transpose()
 	}
 }

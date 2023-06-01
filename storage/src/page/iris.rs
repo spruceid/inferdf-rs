@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use inferdf_core::Id;
-use iref::{IriBuf, Iri};
+use iref::{Iri, IriBuf};
 use rdf_types::IriVocabulary;
 
 use crate::{
@@ -19,7 +19,7 @@ impl<I> IrisPage<I> {
 	pub fn find(
 		&self,
 		vocabulary: &impl IriVocabulary<Iri = I>,
-		iri: Iri
+		iri: Iri,
 	) -> Result<usize, Ordering> {
 		if self.0.is_empty() {
 			Err(Ordering::Equal)
@@ -28,7 +28,10 @@ impl<I> IrisPage<I> {
 		} else if vocabulary.iri(&self.0[self.0.len() - 1].iri).unwrap() < iri {
 			Err(Ordering::Less)
 		} else {
-			match self.0.binary_search_by_key(&iri, |e| vocabulary.iri(&e.iri).unwrap()) {
+			match self
+				.0
+				.binary_search_by_key(&iri, |e| vocabulary.iri(&e.iri).unwrap())
+			{
 				Ok(i) => Ok(i),
 				Err(_) => Err(Ordering::Equal),
 			}
@@ -38,7 +41,7 @@ impl<I> IrisPage<I> {
 
 pub struct Entry<I> {
 	pub iri: I,
-	pub interpretation: Id
+	pub interpretation: Id,
 }
 
 impl<V, I: Encode<V>> Encode<V> for IrisPage<I> {
@@ -52,7 +55,10 @@ impl<V, I: Encode<V>> Encode<V> for IrisPage<I> {
 }
 
 impl<V, I: DecodeWith<V>> DecodeWith<V> for IrisPage<I> {
-	fn decode_with(vocabulary: &mut V, input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+	fn decode_with(
+		vocabulary: &mut V,
+		input: &mut impl std::io::Read,
+	) -> Result<Self, module::decode::Error> {
 		Ok(Self(Vec::decode_with(vocabulary, input)?))
 	}
 }
@@ -69,7 +75,10 @@ impl<V, I: Encode<V>> Encode<V> for Entry<I> {
 }
 
 impl<V, I: DecodeWith<V>> DecodeWith<V> for Entry<I> {
-	fn decode_with(vocabulary: &mut V, input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+	fn decode_with(
+		vocabulary: &mut V,
+		input: &mut impl std::io::Read,
+	) -> Result<Self, module::decode::Error> {
 		Ok(Self {
 			iri: I::decode_with(vocabulary, input)?,
 			interpretation: Id::decode(input)?,

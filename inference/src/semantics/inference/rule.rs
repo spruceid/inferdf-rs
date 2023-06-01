@@ -181,10 +181,13 @@ impl<V: Vocabulary> Interpret<V> for StatementPattern<uninterpreted::Term<V>> {
 		interpretation: &mut I,
 	) -> Result<Self::Interpreted, I::Error> {
 		match self {
-			Self::Triple(pattern) => Ok(StatementPattern::Triple(pattern.interpret(vocabulary, interpretation)?)),
-			Self::Eq(a, b) => {
-				Ok(StatementPattern::Eq(a.interpret(vocabulary, interpretation)?, b.interpret(vocabulary, interpretation)?))
-			}
+			Self::Triple(pattern) => Ok(StatementPattern::Triple(
+				pattern.interpret(vocabulary, interpretation)?,
+			)),
+			Self::Eq(a, b) => Ok(StatementPattern::Eq(
+				a.interpret(vocabulary, interpretation)?,
+				b.interpret(vocabulary, interpretation)?,
+			)),
 		}
 	}
 }

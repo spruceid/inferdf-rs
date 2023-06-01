@@ -36,3 +36,64 @@ impl<K: Eq + Hash, V: Union> Union for HashMap<K, V> {
 		}
 	}
 }
+
+pub trait FailibleIterator {
+	type Item;
+	type Error;
+
+	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error>;
+}
+
+pub trait IteratorWith<V> {
+	type Item;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item>;
+}
+
+pub trait TryCollect {
+	type Item;
+	type Error;
+
+	fn try_collect(self) -> Result<Vec<Self::Item>, Self::Error>;
+}
+
+impl<I: Iterator<Item = Result<J, E>>, J, E> TryCollect for I {
+	type Item = J;
+	type Error = E;
+
+	fn try_collect(self) -> Result<Vec<Self::Item>, Self::Error> {
+		let mut result = Vec::new();
+
+		for item in self {
+			result.push(item?);
+		}
+
+		Ok(result)
+	}
+}
+
+pub trait GetOrTryInsertWith {
+	type Item;
+
+	fn get_or_try_insert_with<E>(
+		&mut self,
+		f: impl FnOnce() -> Result<Self::Item, E>,
+	) -> Result<&mut Self::Item, E>;
+}
+
+impl<T> GetOrTryInsertWith for Option<T> {
+	type Item = T;
+
+	fn get_or_try_insert_with<E>(
+		&mut self,
+		f: impl FnOnce() -> Result<Self::Item, E>,
+	) -> Result<&mut Self::Item, E> {
+		match self {
+			None => {
+				*self = Some(f()?);
+				Ok(unsafe { self.as_mut().unwrap_unchecked() })
+			}
+			Some(value) => Ok(value),
+		}
+	}
+}

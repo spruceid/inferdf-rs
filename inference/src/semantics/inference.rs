@@ -6,7 +6,7 @@ pub use rule::{Path, Rule};
 
 use inferdf_core::{
 	pattern::{self, Instantiate, Matching},
-	Cause, Entailment, IteratorSearch, Signed, Triple,
+	Cause, Entailment, IteratorSearch, Signed, Triple, TryCollect,
 };
 
 use self::rule::TripleStatement;
@@ -49,13 +49,13 @@ impl System {
 	}
 
 	/// Deduce new facts from the given triple.
-	pub fn deduce(
+	pub fn deduce<C: Context>(
 		&self,
-		context: &mut impl Context,
+		context: &mut C,
 		triple: Signed<Triple>,
 		mut entailment_index: impl FnMut(Entailment) -> u32,
 		mut new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
-	) {
+	) -> Result<(), C::Error> {
 		for &path in self.paths.get(triple) {
 			self.deduce_from(
 				context,
@@ -63,18 +63,20 @@ impl System {
 				path,
 				&mut entailment_index,
 				&mut new_triple,
-			)
+			)?
 		}
+
+		Ok(())
 	}
 
-	fn deduce_from(
+	fn deduce_from<C: Context>(
 		&self,
-		context: &mut impl Context,
+		context: &mut C,
 		triple: Signed<Triple>,
 		path: Path,
 		entailment_index: &mut impl FnMut(Entailment) -> u32,
 		new_triple: &mut impl FnMut(Meta<Signed<TripleStatement>, Cause>),
-	) {
+	) -> Result<(), C::Error> {
 		let rule = self.get(path.rule).unwrap();
 		let pattern = rule.hypothesis.patterns[path.pattern];
 		let mut substitution = pattern::PatternSubstitution::new();
@@ -95,7 +97,7 @@ impl System {
 					Some(
 						context
 							.pattern_matching(pattern.cast())
-							.map(move |m| (pattern, m)),
+							.map(move |m| m.map(|m| (pattern, m))),
 					)
 				}
 			})
@@ -110,7 +112,7 @@ impl System {
 					None
 				}
 			})
-			.collect();
+			.try_collect()?;
 
 		substitutions
 			.into_iter()
@@ -132,18 +134,20 @@ impl System {
 
 				statements.into_iter().map(move |s| Meta(s, cause))
 			})
-			.for_each(new_triple)
+			.for_each(new_triple);
+
+		Ok(())
 	}
 }
 
 impl Semantics for System {
-	fn deduce(
+	fn deduce<C: Context>(
 		&self,
-		context: &mut impl Context,
+		context: &mut C,
 		triple: Signed<Triple>,
 		entailment_index: impl FnMut(Entailment) -> u32,
 		new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
-	) {
+	) -> Result<(), C::Error> {
 		self.deduce(context, triple, entailment_index, new_triple)
 	}
 }

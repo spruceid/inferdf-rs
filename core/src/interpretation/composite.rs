@@ -6,7 +6,7 @@ use rdf_types::Vocabulary;
 
 use crate::{
 	pattern::{self, IdOrVar, IdOrVarIter},
-	uninterpreted, Id, Module, Pattern, Quad, Triple, IteratorWith,
+	uninterpreted, Id, IteratorWith, Module, Pattern, Quad, Triple,
 };
 
 use super::{
@@ -91,8 +91,13 @@ impl<V: Vocabulary> Interpretation<V> {
 					Some(imported_id) => Ok(*imported_id),
 					None => {
 						let dependency = dependencies.get(d).unwrap();
-						match dependency.interpretation().terms_of(id)?.next_with(vocabulary) {
-							Some(term) => self.insert_term(vocabulary, dependencies, term),
+						match dependency
+							.interpretation()
+							.terms_of(id)?
+							.next_with(vocabulary)
+						{
+							Some(Err(e)) => Err(e),
+							Some(Ok(term)) => self.insert_term(vocabulary, dependencies, term),
 							None => {
 								todo!()
 							}
@@ -140,8 +145,9 @@ impl<V: Vocabulary> Interpretation<V> {
 				let id = self.interpretation.insert_term(term);
 
 				for (d, dependency) in dependencies.iter() {
-					if let Some(dependency_id) =
-						dependency.interpretation().term_interpretation(vocabulary, term)?
+					if let Some(dependency_id) = dependency
+						.interpretation()
+						.term_interpretation(vocabulary, term)?
 					{
 						let i = self.interfaces.entry(d).or_default();
 						i.source.insert(id, vec![dependency_id]);
@@ -171,7 +177,7 @@ impl<V: Vocabulary> Interpretation<V> {
 						// import all known representations.
 						let mut terms = dependency.interpretation().terms_of(dependency_id)?;
 						while let Some(other_term) = terms.next_with(vocabulary) {
-							self.interpretation.set_term_interpretation(other_term, id);
+							self.interpretation.set_term_interpretation(other_term?, id);
 						}
 					}
 				}
@@ -196,7 +202,8 @@ impl<V: Vocabulary> Interpretation<V> {
 			self.insert_term(vocabulary, dependencies, s)?,
 			self.insert_term(vocabulary, dependencies, p)?,
 			self.insert_term(vocabulary, dependencies, o)?,
-			g.map(|g| self.insert_term(vocabulary, dependencies, g)).transpose()?,
+			g.map(|g| self.insert_term(vocabulary, dependencies, g))
+				.transpose()?,
 		))
 	}
 
@@ -313,8 +320,13 @@ where
 {
 	type Error = D::Error;
 
-	fn insert_term(&mut self, vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, Self::Error> {
-		self.interpretation.insert_term(vocabulary, self.dependencies, term)
+	fn insert_term(
+		&mut self,
+		vocabulary: &mut V,
+		term: uninterpreted::Term<V>,
+	) -> Result<Id, Self::Error> {
+		self.interpretation
+			.insert_term(vocabulary, self.dependencies, term)
 	}
 }
 

@@ -26,19 +26,24 @@ pub trait Graph<'a>: Clone {
 
 	fn triples(&self) -> Self::Triples;
 
-	fn find_triple(&self, triple: Triple) -> Result<Option<(u32, Meta<Signed<Triple>, Cause>)>, Self::Error> {
-		self.unsigned_pattern_matching(triple.into()).next().transpose()
+	fn find_triple(
+		&self,
+		triple: Triple,
+	) -> Result<Option<(u32, Meta<Signed<Triple>, Cause>)>, Self::Error> {
+		self.unsigned_pattern_matching(triple.into())?
+			.next()
+			.transpose()
 	}
 
-	fn resource_facts(&self, id: Id) -> ResourceFacts<'a, Self> {
-		match self.get_resource(id) {
-			Some(r) => ResourceFacts::Some {
+	fn resource_facts(&self, id: Id) -> Result<ResourceFacts<'a, Self>, Self::Error> {
+		match self.get_resource(id)? {
+			Some(r) => Ok(ResourceFacts::Some {
 				graph: (*self).clone(),
 				subject: r.as_subject().peekable(),
 				predicate: r.as_predicate().peekable(),
 				object: r.as_object().peekable(),
-			},
-			None => ResourceFacts::None,
+			}),
+			None => Ok(ResourceFacts::None),
 		}
 	}
 
@@ -46,25 +51,28 @@ pub trait Graph<'a>: Clone {
 		&self,
 		pattern: pattern::Canonical,
 		sign: Option<Sign>,
-	) -> Matching<'a, Self> {
-		Matching {
-			inner: RawMatching::new((*self).clone(), pattern),
+	) -> Result<Matching<'a, Self>, Self::Error> {
+		Ok(Matching {
+			inner: RawMatching::new((*self).clone(), pattern)?,
 			constraints: MatchingConstraints {
 				predicate: pattern.predicate(),
 				object: pattern.object(),
 				sign,
 			},
-		}
+		})
 	}
 
 	fn pattern_matching(
 		&self,
 		Signed(sign, pattern): Signed<pattern::Canonical>,
-	) -> Matching<'a, Self> {
+	) -> Result<Matching<'a, Self>, Self::Error> {
 		self.full_pattern_matching(pattern, Some(sign))
 	}
 
-	fn unsigned_pattern_matching(&self, pattern: pattern::Canonical) -> Matching<'a, Self> {
+	fn unsigned_pattern_matching(
+		&self,
+		pattern: pattern::Canonical,
+	) -> Result<Matching<'a, Self>, Self::Error> {
 		self.full_pattern_matching(pattern, None)
 	}
 }
@@ -94,7 +102,7 @@ impl<'a, G: Graph<'a>> ResourceFacts<'a, G> {
 }
 
 impl<'a, G: Graph<'a>> Iterator for ResourceFacts<'a, G> {
-	type Item = (u32, Meta<Signed<Triple>, Cause>);
+	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
@@ -132,7 +140,7 @@ impl<'a, G: Graph<'a>> Iterator for ResourceFacts<'a, G> {
 						object.next();
 					}
 
-					(m, graph.get_triple(m).unwrap())
+					Ok((m, graph.get_triple(m)?.unwrap()))
 				})
 			}
 		}
@@ -142,10 +150,10 @@ impl<'a, G: Graph<'a>> Iterator for ResourceFacts<'a, G> {
 pub struct MatchingQuads<'a, G: Graph<'a>>(Matching<'a, G>);
 
 impl<'a, G: Graph<'a>> Iterator for MatchingQuads<'a, G> {
-	type Item = Meta<Signed<Triple>, Cause>;
+	type Item = Result<Meta<Signed<Triple>, Cause>, G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next().map(|(_, q)| q)
+		self.0.next().map(|r| r.map(|(_, q)| q))
 	}
 }
 
@@ -172,13 +180,10 @@ impl<'a, G: Graph<'a>> Iterator for Matching<'a, G> {
 	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner
-			.find(|r| {
-				match r {
-					Ok((_, Meta(t, _))) => self.constraints.filter(*t),
-					Err(_) => true
-				}
-			})
+		self.inner.find(|r| match r {
+			Ok((_, Meta(t, _))) => self.constraints.filter(*t),
+			Err(_) => true,
+		})
 	}
 }
 
@@ -193,7 +198,10 @@ enum RawMatching<'a, G: Graph<'a>> {
 	},
 }
 
-fn get_resource_opt<'a, G: Graph<'a>>(graph: &G, id: Option<Id>) -> Result<Option<Option<G::Resource>>, G::Error> {
+fn get_resource_opt<'a, G: Graph<'a>>(
+	graph: &G,
+	id: Option<Id>,
+) -> Result<Option<Option<G::Resource>>, G::Error> {
 	match id {
 		Some(id) => Ok(graph.get_resource(id)?.map(Some)),
 		None => Ok(Some(None)),
@@ -209,21 +217,21 @@ impl<'a, G: Graph<'a>> RawMatching<'a, G> {
 		if s.is_none() && p.is_none() && o.is_none() {
 			Ok(Self::All(graph.triples()))
 		} else {
-			Ok(get_resource_opt(&graph, s)?
-			.and_then(|s| {
-				get_resource_opt(&graph, p)
-			}).transpose()?
-			.and_then(|p| {
-				get_resource_opt(&graph, o)
-			})
-			.transpose()?
-			.map(|o| Self::Constrained {
-				graph,
-				subject: s.map(|r| r.as_subject()),
-				predicate: p.map(|r| r.as_predicate()),
-				object: o.map(|r| r.as_object()),
-			})
-			.unwrap_or(Self::None))
+			match get_resource_opt(&graph, s)? {
+				Some(s) => match get_resource_opt(&graph, p)? {
+					Some(p) => match get_resource_opt(&graph, o)? {
+						Some(o) => Ok(Self::Constrained {
+							graph,
+							subject: s.map(|r| r.as_subject()),
+							predicate: p.map(|r| r.as_predicate()),
+							object: o.map(|r| r.as_object()),
+						}),
+						None => Ok(Self::None),
+					},
+					None => Ok(Self::None),
+				},
+				None => Ok(Self::None),
+			}
 		}
 	}
 }

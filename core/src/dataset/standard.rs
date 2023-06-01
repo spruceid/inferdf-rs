@@ -115,12 +115,12 @@ impl Standard {
 	}
 
 	/// Replaces occurences of `b` with `a`.
-	pub fn replace_id(
+	pub fn replace_id<E: From<Contradiction>>(
 		&mut self,
 		a: Id,
 		b: Id,
-		filter: impl Fn(&graph::Fact) -> Result<bool, Contradiction>,
-	) -> Result<(), Contradiction> {
+		filter: impl Fn(&graph::Fact) -> Result<bool, E>,
+	) -> Result<(), E> {
 		for (_, graph) in self.graphs_mut() {
 			graph.replace_id(a, b, &filter)?
 		}

@@ -6,7 +6,7 @@ use std::hash::Hash;
 use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::{self, composite, InterpretationMut},
-	uninterpreted, Entailment, Id, Module, Quad, ReplaceId, Sign, Signed,
+	uninterpreted, Entailment, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect,
 };
 
 use crate::semantics::Semantics;
@@ -96,13 +96,21 @@ where
 {
 	type Error = D::Error;
 
-	fn insert_term(&mut self, vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, Self::Error> {
+	fn insert_term(
+		&mut self,
+		vocabulary: &mut V,
+		term: uninterpreted::Term<V>,
+	) -> Result<Id, Self::Error> {
 		self.insert_term(vocabulary, term)
 	}
 }
 
 impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
-	pub fn insert_term(&mut self, vocabulary: &mut V, term: uninterpreted::Term<V>) -> Result<Id, D::Error>
+	pub fn insert_term(
+		&mut self,
+		vocabulary: &mut V,
+		term: uninterpreted::Term<V>,
+	) -> Result<Id, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
@@ -112,7 +120,11 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 			.insert_term(vocabulary, &self.data.dependencies, term)
 	}
 
-	pub fn insert_quad(&mut self, vocabulary: &mut V, quad: uninterpreted::Quad<V>) -> Result<Quad, D::Error>
+	pub fn insert_quad(
+		&mut self,
+		vocabulary: &mut V,
+		quad: uninterpreted::Quad<V>,
+	) -> Result<Quad, D::Error>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
@@ -125,7 +137,7 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 
 pub enum Error<E> {
 	Contradiction(Contradiction),
-	Dependency(E)
+	Dependency(E),
 }
 
 impl<E> From<dataset::Contradiction> for Error<E> {
@@ -137,6 +149,15 @@ impl<E> From<dataset::Contradiction> for Error<E> {
 impl<E> From<interpretation::Contradiction> for Error<E> {
 	fn from(value: interpretation::Contradiction) -> Self {
 		Self::Contradiction(value.into())
+	}
+}
+
+impl<E> From<dependency::Error<E>> for Error<E> {
+	fn from(value: dependency::Error<E>) -> Self {
+		match value {
+			dependency::Error::Contradiction(c) => c.into(),
+			dependency::Error::Module(e) => Self::Dependency(e),
+		}
 	}
 }
 
@@ -168,14 +189,19 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 
 						if inserted {
 							let mut context = Context::new(&mut self.interpretation, &self.data);
-							self.semantics.deduce(
-								&mut context,
-								Signed(sign, triple),
-								|e| self.entailments.insert_full(e).0 as u32,
-								|Meta(Signed(sign, statement), cause)| {
-									stack.push(Meta(Signed(sign, statement.with_graph(g)), cause))
-								},
-							)
+							self.semantics
+								.deduce(
+									&mut context,
+									Signed(sign, triple),
+									|e| self.entailments.insert_full(e).0 as u32,
+									|Meta(Signed(sign, statement), cause)| {
+										stack.push(Meta(
+											Signed(sign, statement.with_graph(g)),
+											cause,
+										))
+									},
+								)
+								.map_err(Error::Dependency)?
 						}
 					}
 				}
@@ -190,25 +216,34 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 						})?;
 					stack.replace_id(b, a);
 
-					for (d, _, Meta(Signed(sign, quad), _)) in
-						self.data.resource_facts(&self.interpretation, a)
+					for signed_quad in self
+						.data
+						.resource_facts(&self.interpretation, a)
+						.map_err(Error::Dependency)?
 					{
-						let triple = self.interpretation.import_triple(
-							vocabulary,
-							&self.data.dependencies,
-							d,
-							quad.into_triple().0,
-						).map_err(Error::Dependency)?;
+						let (d, _, Meta(Signed(sign, quad), _)) =
+							signed_quad.map_err(Error::Dependency)?;
+						let triple = self
+							.interpretation
+							.import_triple(
+								vocabulary,
+								&self.data.dependencies,
+								d,
+								quad.into_triple().0,
+							)
+							.map_err(Error::Dependency)?;
 
 						let mut context = Context::new(&mut self.interpretation, &self.data);
-						self.semantics.deduce(
-							&mut context,
-							Signed(sign, triple),
-							|e| self.entailments.insert_full(e).0 as u32,
-							|Meta(Signed(sign, statement), cause)| {
-								stack.push(Meta(Signed(sign, statement.with_graph(g)), cause))
-							},
-						);
+						self.semantics
+							.deduce(
+								&mut context,
+								Signed(sign, triple),
+								|e| self.entailments.insert_full(e).0 as u32,
+								|Meta(Signed(sign, statement), cause)| {
+									stack.push(Meta(Signed(sign, statement.with_graph(g)), cause))
+								},
+							)
+							.map_err(Error::Dependency)?;
 					}
 				}
 				Signed(Sign::Negative, QuadStatement::Eq(a, b, _)) => {
@@ -231,7 +266,7 @@ impl<V: Vocabulary, D: Module<V>> Data<V, D> {
 		&self,
 		interpretation: &composite::Interpretation<V>,
 		id: Id,
-	) -> ResourceFacts<D::Dataset<'_>> {
+	) -> Result<ResourceFacts<D::Dataset<'_>>, D::Error> {
 		let toplevel = self.set.resource_facts(id);
 		let dependencies = self
 			.dependencies
@@ -241,20 +276,20 @@ impl<V: Vocabulary, D: Module<V>> Data<V, D> {
 					.dependency_ids(i, id)
 					.filter_map(move |local_id| {
 						let mut facts = d.dataset().resource_facts(local_id);
-						if facts.is_empty() {
-							None
-						} else {
-							Some((i, local_id, facts))
+						match facts.is_empty() {
+							Ok(true) => None,
+							Ok(false) => Some(Ok((i, local_id, facts))),
+							Err(e) => Some(Err(e)),
 						}
 					})
 			})
-			.collect();
+			.try_collect()?;
 
-		ResourceFacts {
+		Ok(ResourceFacts {
 			id,
 			toplevel,
 			dependencies,
-		}
+		})
 	}
 }
 
@@ -268,16 +303,17 @@ pub struct ResourceFacts<'a, D: Dataset<'a>> {
 }
 
 impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
-	type Item = (Option<usize>, Id, dataset::Fact);
+	type Item = Result<(Option<usize>, Id, dataset::Fact), D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.toplevel
 			.next()
-			.map(|fact| (None, self.id, fact))
+			.map(|fact| Ok((None, self.id, fact)))
 			.or_else(|| {
 				while let Some((d, local_id, facts)) = self.dependencies.last_mut() {
 					match facts.next() {
-						Some((_, fact)) => return Some((Some(*d), *local_id, fact)),
+						Some(Err(e)) => return Some(Err(e)),
+						Some(Ok((_, fact))) => return Some(Ok((Some(*d), *local_id, fact))),
 						None => {
 							self.dependencies.pop();
 						}

@@ -10,9 +10,9 @@ use crate::{
 /// A Resource triples page.
 ///
 /// Resources pages list resources of a graph and the triples they occur in.
-pub struct ResourceTriplesPage(Vec<Entry>);
+pub struct ResourcesTriplesPage(Vec<Entry>);
 
-impl ResourceTriplesPage {
+impl ResourcesTriplesPage {
 	pub fn get(&self, i: usize) -> Option<&Entry> {
 		self.0.get(i)
 	}
@@ -40,7 +40,7 @@ pub struct Entry {
 	pub as_object: Vec<u32>,
 }
 
-impl<V> Encode<V> for ResourceTriplesPage {
+impl<V> Encode<V> for ResourcesTriplesPage {
 	fn encode(
 		&self,
 		vocabulary: &V,
@@ -50,7 +50,7 @@ impl<V> Encode<V> for ResourceTriplesPage {
 	}
 }
 
-impl Decode for ResourceTriplesPage {
+impl Decode for ResourcesTriplesPage {
 	fn decode(input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
 		Ok(Self(Vec::decode(input)?))
 	}

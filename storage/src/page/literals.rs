@@ -18,20 +18,26 @@ impl<L> LiteralsPage<L> {
 	pub fn find<V: LiteralVocabulary<Literal = L>>(
 		&self,
 		vocabulary: &V,
-		literal: &Literal<V::Type, V::Value>
+		literal: &Literal<V::Type, V::Value>,
 	) -> Result<usize, Ordering>
 	where
 		V::Type: Ord,
-		V::Value: Ord
+		V::Value: Ord,
 	{
 		if self.0.is_empty() {
 			Err(Ordering::Equal)
 		} else if vocabulary.literal(&self.0[0].literal).unwrap() > literal {
 			Err(Ordering::Greater)
-		} else if vocabulary.literal(&self.0[self.0.len() - 1].literal).unwrap() < literal {
+		} else if vocabulary
+			.literal(&self.0[self.0.len() - 1].literal)
+			.unwrap() < literal
+		{
 			Err(Ordering::Less)
 		} else {
-			match self.0.binary_search_by_key(&literal, |e| vocabulary.literal(&e.literal).unwrap()) {
+			match self
+				.0
+				.binary_search_by_key(&literal, |e| vocabulary.literal(&e.literal).unwrap())
+			{
 				Ok(i) => Ok(i),
 				Err(_) => Err(Ordering::Equal),
 			}
@@ -55,7 +61,10 @@ impl<V, L: Encode<V>> Encode<V> for LiteralsPage<L> {
 }
 
 impl<V, L: DecodeWith<V>> DecodeWith<V> for LiteralsPage<L> {
-	fn decode_with(vocabulary: &mut V, input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+	fn decode_with(
+		vocabulary: &mut V,
+		input: &mut impl std::io::Read,
+	) -> Result<Self, module::decode::Error> {
 		Ok(Self(Vec::decode_with(vocabulary, input)?))
 	}
 }
@@ -72,7 +81,10 @@ impl<V, L: Encode<V>> Encode<V> for Entry<L> {
 }
 
 impl<V, L: DecodeWith<V>> DecodeWith<V> for Entry<L> {
-	fn decode_with(vocabulary: &mut V, input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+	fn decode_with(
+		vocabulary: &mut V,
+		input: &mut impl std::io::Read,
+	) -> Result<Self, module::decode::Error> {
 		Ok(Self {
 			literal: L::decode_with(vocabulary, input)?,
 			interpretation: Id::decode(input)?,

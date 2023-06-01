@@ -79,7 +79,7 @@ impl Sections {
 fn binary_search_page<T, E>(
 	first_page: u32,
 	next_page: u32,
-	get_page: impl Fn(u32) -> Result<Result<T, Ordering>, E>,
+	mut get_page: impl FnMut(u32) -> Result<Result<T, Ordering>, E>,
 ) -> Result<Option<T>, E> {
 	let mut a = first_page;
 	let mut b = next_page;

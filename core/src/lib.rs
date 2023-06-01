@@ -17,7 +17,7 @@ pub type Quad = rdf_types::Quad<Id, Id, Id, Id>;
 
 pub trait Module<V: Vocabulary> {
 	type Error;
-	type Dataset<'a>: Dataset<'a>
+	type Dataset<'a>: Dataset<'a, Error = Self::Error>
 	where
 		Self: 'a;
 	type Interpretation<'a>: Interpretation<'a, V, Error = Self::Error>
@@ -58,10 +58,4 @@ impl From<Id> for u32 {
 	fn from(value: Id) -> Self {
 		value.0
 	}
-}
-
-pub trait IteratorWith<V> {
-	type Item;
-
-	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item>;
 }

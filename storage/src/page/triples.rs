@@ -9,17 +9,23 @@ use crate::{
 const SIGN_LEN: u32 = 1;
 const TRIPLE_LEN: u32 = 4 * 3;
 const CAUSE_LEN: u32 = 1 + 4;
-const FACT_LEN: u32 = SIGN_LEN + TRIPLE_LEN + CAUSE_LEN;
+pub const FACT_LEN: u32 = SIGN_LEN + TRIPLE_LEN + CAUSE_LEN;
 
 pub struct TriplesPage(Vec<Meta<Signed<Triple>, Cause>>);
+
+pub fn page_triple_count(triple_count: u32, page_index: u32, triples_per_page: u32) -> u32 {
+	std::cmp::min(
+		triple_count - page_index * triples_per_page,
+		triples_per_page,
+	)
+}
 
 impl TriplesPage {
 	/// Returns the page index and the index in the page of the triple
 	/// identified by the given graph triple index `i`.
-	pub fn triple_page_index(page_len: u32, i: u32) -> (u32, u32) {
-		let triple_per_page = page_len / FACT_LEN;
-		let page = i / triple_per_page;
-		let local_i = i % triple_per_page;
+	pub fn triple_page_index(triples_per_page: u32, i: u32) -> (u32, u32) {
+		let page = i / triples_per_page;
+		let local_i = i % triples_per_page;
 		(page, local_i)
 	}
 
@@ -44,9 +50,8 @@ impl<V> Encode<V> for TriplesPage {
 	}
 }
 
-impl<V> DecodeSized<V> for TriplesPage {
+impl DecodeSized for TriplesPage {
 	fn decode_sized(
-		vocabulary: &mut V,
 		input: &mut impl std::io::Read,
 		len: u32,
 	) -> Result<Self, module::decode::Error> {

@@ -1,11 +1,18 @@
-use std::{io::{Read, Seek}, iter::Copied};
+use std::{
+	io::{Read, Seek},
+	iter::Copied,
+};
 
 use derivative::Derivative;
-use inferdf_core::{Cause, Id, Signed, Triple};
+use inferdf_core::{Cause, FailibleIterator, GetOrTryInsertWith, Id, Signed, Triple};
 use locspan::Meta;
 use rdf_types::Vocabulary;
 
-use crate::{binary_search_page, module::cache, page, Module};
+use crate::{
+	binary_search_page,
+	module::{cache, Error},
+	page, Module,
+};
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Copy(bound = ""))]
@@ -21,10 +28,11 @@ impl<'a, V: Vocabulary, R: Read> Graph<'a, V, R> {
 }
 
 impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Graph<'a, V, R> {
+	type Error = Error;
 	type Resource = Resource<'a>;
 	type Triples = Triples<'a, V, R>;
 
-	fn get_resource(&self, id: Id) -> Option<Self::Resource> {
+	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Error> {
 		Resource::find(
 			self.module,
 			id,
@@ -34,11 +42,16 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Gra
 	}
 
 	fn get_triple(&self, i: u32) -> Result<Option<Meta<Signed<Triple>, Cause>>, Error> {
-		let (p, page_i) = page::TriplesPage::triple_page_index(self.module.header.page_size, i);
+		let (p, page_i) = page::TriplesPage::triple_page_index(self.module.triples_per_page, i);
+		let page_triples_count = page::triples::page_triple_count(
+			self.desc.triple_count,
+			p,
+			self.module.triples_per_page,
+		);
 		if p < self.desc.triple_page_count {
 			let page = self
 				.module
-				.get_triples_page(p + self.desc.first_page)?;
+				.get_triples_page(p + self.desc.first_page, page_triples_count)?;
 			Ok(page.get(page_i))
 		} else {
 			Ok(None)
@@ -51,6 +64,7 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Gra
 			index: 0,
 			page_index: self.desc.first_page,
 			next_page_index: self.desc.first_page + self.desc.triple_page_count,
+			triple_count: self.desc.triple_count,
 			page: None,
 		}
 	}
@@ -68,12 +82,12 @@ impl<'a> Resource<'a> {
 		id: Id,
 		first_page: u32,
 		page_count: u32,
-	) -> Option<Self> {
+	) -> Result<Option<Self>, Error> {
 		binary_search_page(first_page, first_page + page_count, |i| {
-			let page = module.get_resource_triples_page(i).unwrap();
-			page.find(id).map(|r| Resource {
+			let page = module.get_resource_triples_page(i)?;
+			Ok(page.find(id).map(|r| Resource {
 				entry: cache::Ref::map(page, |page| page.get(r).unwrap()),
-			})
+			}))
 		})
 	}
 }
@@ -105,26 +119,34 @@ pub struct Triples<'a, V: Vocabulary, R> {
 	index: u32,
 	page_index: u32,
 	next_page_index: u32,
+	triple_count: u32,
 	page: Option<cache::Aliasing<'a, page::triples::Iter<'a>>>,
 }
 
-impl<'a, V: Vocabulary, R: Read + Seek> Iterator for Triples<'a, V, R> {
+impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Triples<'a, V, R> {
 	type Item = (u32, Meta<Signed<Triple>, Cause>);
+	type Error = Error;
 
-	fn next(&mut self) -> Option<Self::Item> {
+	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
 		while self.page_index < self.next_page_index {
-			let iter = self.page.get_or_insert_with(|| {
-				cache::Ref::aliasing_map(
-					self.module.get_triples_page(self.page_index).unwrap(),
+			let iter = self.page.get_or_try_insert_with::<Error>(|| {
+				let page_triples_count = page::triples::page_triple_count(
+					self.triple_count,
+					self.page_index,
+					self.module.triples_per_page,
+				);
+				Ok(cache::Ref::aliasing_map(
+					self.module
+						.get_triples_page(self.page_index, page_triples_count)?,
 					|p| p.iter(),
-				)
-			});
+				))
+			})?;
 
 			match iter.next() {
 				Some(triple) => {
 					let i = self.index;
 					self.index += 1;
-					return Some((i, triple));
+					return Ok(Some((i, triple)));
 				}
 				None => {
 					self.page = None;
@@ -133,6 +155,14 @@ impl<'a, V: Vocabulary, R: Read + Seek> Iterator for Triples<'a, V, R> {
 			}
 		}
 
-		None
+		Ok(None)
+	}
+}
+
+impl<'a, V: Vocabulary, R: Read + Seek> Iterator for Triples<'a, V, R> {
+	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.try_next().transpose()
 	}
 }

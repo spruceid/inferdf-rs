@@ -83,7 +83,10 @@ impl<V: Vocabulary, T: Interpret<V>> Interpret<V> for Signed<T> {
 		vocabulary: &mut V,
 		interpretation: &mut I,
 	) -> Result<Self::Interpreted, I::Error> {
-		Ok(Signed(self.0, self.1.interpret(vocabulary, interpretation)?))
+		Ok(Signed(
+			self.0,
+			self.1.interpret(vocabulary, interpretation)?,
+		))
 	}
 }
 

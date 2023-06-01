@@ -26,6 +26,17 @@ impl<V, D> Dependencies<V, D> {
 	}
 }
 
+pub enum Error<E> {
+	Contradiction(dataset::Contradiction),
+	Module(E),
+}
+
+impl<E> From<dataset::Contradiction> for Error<E> {
+	fn from(value: dataset::Contradiction) -> Self {
+		Self::Contradiction(value)
+	}
+}
+
 impl<V: Vocabulary, D: Module<V>> Dependencies<V, D> {
 	/// Filter the given signed triple by lookgin for a similar triple in the
 	/// dependencies datasets.
@@ -39,14 +50,18 @@ impl<V: Vocabulary, D: Module<V>> Dependencies<V, D> {
 		interpretation: &composite::Interpretation<V>,
 		triple: Triple,
 		sign: Sign,
-	) -> Result<bool, dataset::Contradiction> {
+	) -> Result<bool, Error<D::Error>> {
 		for (&d, dependency) in &self.map {
 			for dependency_triple in interpretation.dependency_triples(d, triple) {
-				if let Some((_, fact)) = dependency.dataset().find_triple(dependency_triple) {
+				if let Some((_, fact)) = dependency
+					.dataset()
+					.find_triple(dependency_triple)
+					.map_err(Error::Module)?
+				{
 					if fact.sign() == sign {
 						return Ok(false);
 					} else {
-						return Err(dataset::Contradiction(triple));
+						return Err(Error::Contradiction(dataset::Contradiction(triple)));
 					}
 				}
 			}

@@ -8,7 +8,7 @@ mod slab;
 
 use slab::ConstSlab;
 
-pub use slab::{Aliasing, IntoIterEscape, Ref, RefMut};
+pub use slab::{Aliasing, IntoIterEscape, Ref};
 
 const DEFAULT_CHUNK_LEN: usize = 64;
 
@@ -43,13 +43,18 @@ impl<K, V, const N: usize> CacheMap<K, V, N> {
 		}
 	}
 
+	#[cfg(test)]
 	pub fn new() -> Self {
 		Self::default()
 	}
 }
 
 impl<K: Hash + Eq, V, const N: usize> CacheMap<K, V, N> {
-	fn get_index<E>(&self, key: K, value: impl FnOnce() -> Result<V, E>) -> Result<usize, Error<V, E>> {
+	fn get_index<E>(
+		&self,
+		key: K,
+		value: impl FnOnce() -> Result<V, E>,
+	) -> Result<usize, Error<V, E>> {
 		use std::collections::hash_map::Entry;
 		let mut map = self.map.borrow_mut();
 		match map.entry(key) {
@@ -89,15 +94,23 @@ impl<K: Hash + Eq, V, const N: usize> CacheMap<K, V, N> {
 		}
 	}
 
-	pub fn get<E>(&self, key: K, value: impl FnOnce() -> Result<V, E>) -> Result<Ref<V>, Error<V, E>> {
+	pub fn get<E>(
+		&self,
+		key: K,
+		value: impl FnOnce() -> Result<V, E>,
+	) -> Result<Ref<V>, Error<V, E>> {
 		let index = self.get_index(key, value)?;
 		Ok(self.slab.get(index)?.unwrap())
 	}
 
-	pub fn get_mut<E>(&self, key: K, value: impl FnOnce() -> Result<V, E>) -> Result<RefMut<V>, Error<V, E>> {
-		let index = self.get_index(key, value)?;
-		Ok(self.slab.get_mut(index)?.unwrap())
-	}
+	// pub fn get_mut<E>(
+	// 	&self,
+	// 	key: K,
+	// 	value: impl FnOnce() -> Result<V, E>,
+	// ) -> Result<RefMut<V>, Error<V, E>> {
+	// 	let index = self.get_index(key, value)?;
+	// 	Ok(self.slab.get_mut(index)?.unwrap())
+	// }
 }
 
 #[derive(Debug)]
@@ -181,7 +194,7 @@ impl Priority {
 mod tests {
 	use std::convert::Infallible;
 
-use super::*;
+	use super::*;
 
 	#[test]
 	fn insert_small_chunks() {
@@ -200,13 +213,13 @@ use super::*;
 		eprintln!("{a}, {b}")
 	}
 
-	#[test]
-	fn borrow_rules_1() {
-		let map = CacheMap::<u32, char>::new();
-		let a = map.get_mut::<Infallible>(0, || Ok('A')).unwrap();
-		assert!(map.get::<Infallible>(0, || Ok('B')).is_err());
-		eprintln!("{a}")
-	}
+	// #[test]
+	// fn borrow_rules_1() {
+	// 	let map = CacheMap::<u32, char>::new();
+	// 	let a = map.get_mut::<Infallible>(0, || Ok('A')).unwrap();
+	// 	assert!(map.get::<Infallible>(0, || Ok('B')).is_err());
+	// 	eprintln!("{a}")
+	// }
 
 	#[test]
 	fn borrow_rules_2() {
@@ -216,13 +229,13 @@ use super::*;
 		assert_eq!(a, b)
 	}
 
-	#[test]
-	fn drop_reference() {
-		let map = CacheMap::<u32, char>::new();
-		let a = map.get_mut::<Infallible>(0, || Ok('A')).unwrap();
-		assert!(map.get::<Infallible>(0, || Ok('B')).is_err());
-		eprintln!("{a}");
-		std::mem::drop(a);
-		map.get::<Infallible>(0, || Ok('B')).unwrap();
-	}
+	// #[test]
+	// fn drop_reference() {
+	// 	let map = CacheMap::<u32, char>::new();
+	// 	let a = map.get_mut::<Infallible>(0, || Ok('A')).unwrap();
+	// 	assert!(map.get::<Infallible>(0, || Ok('B')).is_err());
+	// 	eprintln!("{a}");
+	// 	std::mem::drop(a);
+	// 	map.get::<Infallible>(0, || Ok('B')).unwrap();
+	// }
 }

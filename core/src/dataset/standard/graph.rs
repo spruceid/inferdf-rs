@@ -265,12 +265,12 @@ impl Graph {
 	// 	}
 	// }
 
-	pub fn replace_id(
+	pub fn replace_id<E: From<Contradiction>>(
 		&mut self,
 		a: Id,
 		b: Id,
-		filter: impl Fn(&Fact) -> Result<bool, Contradiction>,
-	) -> Result<(), Contradiction> {
+		filter: impl Fn(&Fact) -> Result<bool, E>,
+	) -> Result<(), E> {
 		for mut fact in self.remove_resource(b) {
 			fact.replace_id(a, b);
 			if filter(&fact)? {

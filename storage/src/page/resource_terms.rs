@@ -10,9 +10,9 @@ use crate::{
 /// A Resource terms page.
 ///
 /// Resources pages list resources and their known terms.
-pub struct ResourceTermsPage(Vec<Entry>);
+pub struct ResourcesTermsPage(Vec<Entry>);
 
-impl ResourceTermsPage {
+impl ResourcesTermsPage {
 	pub fn get(&self, i: usize) -> Option<&Entry> {
 		self.0.get(i)
 	}
@@ -60,7 +60,7 @@ pub type LiteralPaths<'a> = std::iter::Copied<std::slice::Iter<'a, LiteralPath>>
 
 pub type DifferentFrom<'a> = std::iter::Copied<std::slice::Iter<'a, Id>>;
 
-impl<V> Encode<V> for ResourceTermsPage {
+impl<V> Encode<V> for ResourcesTermsPage {
 	fn encode(
 		&self,
 		vocabulary: &V,
@@ -70,7 +70,7 @@ impl<V> Encode<V> for ResourceTermsPage {
 	}
 }
 
-impl Decode for ResourceTermsPage {
+impl Decode for ResourcesTermsPage {
 	fn decode(input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
 		Ok(Self(Vec::decode(input)?))
 	}

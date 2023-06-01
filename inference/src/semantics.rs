@@ -6,7 +6,8 @@ use inference::rule::TripleStatement;
 use locspan::Meta;
 
 pub trait Context {
-	type PatternMatching<'a>: 'a + Iterator<Item = Quad>
+	type Error;
+	type PatternMatching<'a>: 'a + Iterator<Item = Result<Quad, Self::Error>>
 	where
 		Self: 'a;
 
@@ -16,11 +17,11 @@ pub trait Context {
 }
 
 pub trait Semantics {
-	fn deduce(
+	fn deduce<C: Context>(
 		&self,
-		context: &mut impl Context,
+		context: &mut C,
 		triple: Signed<Triple>,
 		entailment_index: impl FnMut(Entailment) -> u32,
 		new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
-	);
+	) -> Result<(), C::Error>;
 }

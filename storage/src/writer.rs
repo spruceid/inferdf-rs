@@ -10,7 +10,10 @@ use rdf_types::{
 	IriVocabulary, LanguageTagVocabulary, Literal, LiteralVocabulary,
 };
 
-use crate::{Header, Tag, Version, HEADER_TAG, VERSION, module::{IriPath, LiteralPath}};
+use crate::{
+	module::{IriPath, LiteralPath},
+	Header, Tag, Version, HEADER_TAG, VERSION,
+};
 
 pub trait Encode<V> {
 	fn encode(&self, vocabulary: &V, output: &mut impl Write) -> Result<(), io::Error>;

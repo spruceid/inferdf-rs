@@ -40,8 +40,8 @@ pub enum Error {
 	InvalidCause,
 }
 
-pub trait DecodeSized<V>: Sized {
-	fn decode_sized(vocabulary: &mut V, input: &mut impl Read, len: u32) -> Result<Self, Error>;
+pub trait DecodeSized: Sized {
+	fn decode_sized(input: &mut impl Read, len: u32) -> Result<Self, Error>;
 }
 
 pub trait Decode: Sized {
@@ -198,7 +198,7 @@ impl Decode for IriPath {
 	fn decode(input: &mut impl Read) -> Result<Self, Error> {
 		Ok(Self {
 			page: u32::decode(input)?,
-			index: u32::decode(input)?
+			index: u32::decode(input)?,
 		})
 	}
 }
@@ -207,7 +207,7 @@ impl Decode for LiteralPath {
 	fn decode(input: &mut impl Read) -> Result<Self, Error> {
 		Ok(Self {
 			page: u32::decode(input)?,
-			index: u32::decode(input)?
+			index: u32::decode(input)?,
 		})
 	}
 }
