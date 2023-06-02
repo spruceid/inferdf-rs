@@ -11,7 +11,7 @@ use inferdf_inference::{
 use locspan::Meta;
 use nquads_syntax::Parse;
 use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral};
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -38,8 +38,11 @@ fn main() {
 
 	let mut vocabulary: IndexVocabulary = Default::default();
 
-	let dependencies = builder::Dependencies::<IndexVocabulary, ()>::default();
-	let mut interpretation = interpretation::CompositeInterpretation::new();
+	let dependencies = builder::Dependencies::<
+		IndexVocabulary,
+		inferdf_storage::Module<IndexVocabulary, fs::File>,
+	>::default();
+	let mut interpretation = interpretation::Composite::new();
 
 	let mut system = semantics::inference::System::new();
 	for filename in args.semantics {
@@ -48,7 +51,11 @@ fn main() {
 		let rules = rules
 			.map_literal(|l| l.insert_type_into_vocabulary(&mut vocabulary))
 			.insert_into_vocabulary(&mut vocabulary)
-			.interpret(&mut interpretation.with_dependencies_mut(&dependencies));
+			.interpret(
+				&mut vocabulary,
+				&mut interpretation.with_dependencies_mut(&dependencies),
+			)
+			.unwrap();
 
 		for rule in rules {
 			system.insert(rule);
@@ -62,17 +69,21 @@ fn main() {
 		match nquads_syntax::Document::parse_str(&buffer, |_| ()) {
 			Ok(quads) => {
 				for quad in quads.into_value() {
-					let quad = builder.insert_quad(
-						quad.into_value()
-							.strip_all_but_predicate()
-							.map_literal(|l| l.insert_type_into_vocabulary(&mut vocabulary))
-							.insert_into_vocabulary(&mut vocabulary)
-							.into_grdf(),
-					);
+					let quad = quad
+						.into_value()
+						.strip_all_but_predicate()
+						.map_literal(|l| l.insert_type_into_vocabulary(&mut vocabulary))
+						.insert_into_vocabulary(&mut vocabulary)
+						.into_grdf();
 
-					if let Err(_e) =
-						builder.insert(Meta(Signed(Sign::Positive, quad), Cause::Stated(())))
-					{
+					let quad = builder
+						.insert_quad(&mut vocabulary, quad)
+						.expect("insertion failed");
+
+					if let Err(_e) = builder.insert(
+						&mut vocabulary,
+						Meta(Signed(Sign::Positive, quad), Cause::Stated(0)),
+					) {
 						panic!("contradiction")
 					}
 				}

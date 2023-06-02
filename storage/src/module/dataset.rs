@@ -33,12 +33,12 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::Dataset<'a> for Dataset<'a
 		match id {
 			Some(id) => binary_search_page(
 				self.module.sections.graphs,
-				self.module.sections.graphs + self.module.header.graph_page_count,
+				self.module.sections.graphs + self.module.header.named_graph_page_count,
 				|p| {
 					let page_graph_count = page_graph_count(
-						self.module.header.graph_count,
+						self.module.header.named_graph_count,
 						p,
-						self.module.graphs_per_page,
+						self.module.sections.graphs_per_page,
 					);
 					let page = self.module.get_graph_page(p, page_graph_count)?;
 					Ok(page.find(id).map(|e| {
@@ -59,7 +59,8 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::Dataset<'a> for Dataset<'a
 			module: self.module,
 			default_graph: Some(self.module.header.default_graph),
 			page_index: self.module.sections.graphs,
-			next_page_index: self.module.sections.graphs + self.module.header.graph_page_count,
+			next_page_index: self.module.sections.graphs
+				+ self.module.header.named_graph_page_count,
 			current: None,
 		}
 	}
@@ -92,9 +93,9 @@ impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Graphs<'a, V, R> {
 				while self.page_index < self.next_page_index {
 					let iter = self.current.get_or_try_insert_with::<Error>(|| {
 						let page_graph_count = page_graph_count(
-							self.module.header.graph_count,
+							self.module.header.named_graph_count,
 							self.page_index,
-							self.module.graphs_per_page,
+							self.module.sections.graphs_per_page,
 						);
 						Ok(cache::Ref::aliasing_map(
 							self.module

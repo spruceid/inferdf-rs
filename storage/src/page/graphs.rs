@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use inferdf_core::Id;
 
 use crate::{
-	module::{self, Decode, DecodeSized},
-	writer::Encode,
+	decode::{self, Decode, DecodeSized},
+	encode::{Encode, EncodedLen, StaticEncodedLen},
 };
 
 pub struct GraphsPage(Vec<Entry>);
@@ -36,7 +36,7 @@ impl GraphsPage {
 
 pub type Iter<'a> = std::iter::Copied<std::slice::Iter<'a, Entry>>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct Description {
 	pub triple_count: u32,
 	pub triple_page_count: u32,
@@ -46,7 +46,13 @@ pub struct Description {
 }
 
 impl Description {
-	pub const LEN: usize = 4 * 5;
+	pub fn page_count(&self) -> u32 {
+		self.triple_page_count + self.resource_page_count
+	}
+}
+
+impl StaticEncodedLen for Description {
+	const ENCODED_LEN: u32 = 4 * 5;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -55,25 +61,18 @@ pub struct Entry {
 	pub description: Description,
 }
 
-impl Entry {
-	pub const LEN: usize = 4 + Description::LEN;
+impl StaticEncodedLen for Entry {
+	const ENCODED_LEN: u32 = Id::ENCODED_LEN + Description::ENCODED_LEN;
 }
 
-impl<V> Encode<V> for GraphsPage {
-	fn encode(
-		&self,
-		vocabulary: &V,
-		output: &mut impl std::io::Write,
-	) -> Result<(), std::io::Error> {
-		self.0.encode(vocabulary, output)
+impl Encode for GraphsPage {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+		self.0.encode(output)
 	}
 }
 
 impl DecodeSized for GraphsPage {
-	fn decode_sized(
-		input: &mut impl std::io::Read,
-		len: u32,
-	) -> Result<Self, module::decode::Error> {
+	fn decode_sized(input: &mut impl std::io::Read, len: u32) -> Result<Self, decode::Error> {
 		let mut graphs = Vec::new();
 
 		for _i in 0..len {
@@ -84,22 +83,18 @@ impl DecodeSized for GraphsPage {
 	}
 }
 
-impl<V> Encode<V> for Description {
-	fn encode(
-		&self,
-		vocabulary: &V,
-		output: &mut impl std::io::Write,
-	) -> Result<(), std::io::Error> {
-		self.triple_count.encode(vocabulary, output)?;
-		self.triple_page_count.encode(vocabulary, output)?;
-		self.resource_count.encode(vocabulary, output)?;
-		self.resource_page_count.encode(vocabulary, output)?;
-		self.first_page.encode(vocabulary, output)
+impl Encode for Description {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+		self.triple_count.encode(output)?;
+		self.triple_page_count.encode(output)?;
+		self.resource_count.encode(output)?;
+		self.resource_page_count.encode(output)?;
+		self.first_page.encode(output)
 	}
 }
 
 impl Decode for Description {
-	fn decode(input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+	fn decode(input: &mut impl std::io::Read) -> Result<Self, decode::Error> {
 		Ok(Self {
 			triple_count: u32::decode(input)?,
 			triple_page_count: u32::decode(input)?,
@@ -110,22 +105,69 @@ impl Decode for Description {
 	}
 }
 
-impl<V> Encode<V> for Entry {
-	fn encode(
-		&self,
-		vocabulary: &V,
-		output: &mut impl std::io::Write,
-	) -> Result<(), std::io::Error> {
-		self.id.encode(vocabulary, output)?;
-		self.description.encode(vocabulary, output)
+impl Encode for Entry {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+		self.id.encode(output)?;
+		self.description.encode(output)
 	}
 }
 
 impl Decode for Entry {
-	fn decode(input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+	fn decode(input: &mut impl std::io::Read) -> Result<Self, decode::Error> {
 		Ok(Self {
 			id: Id::decode(input)?,
 			description: Description::decode(input)?,
 		})
+	}
+}
+
+pub struct Pages<E> {
+	page_len: u32,
+	entries: E,
+	page_index: u32,
+	current_page: Option<(GraphsPage, u32)>,
+}
+
+impl<E> Pages<E> {
+	pub fn new(page_len: u32, entries: E) -> Self {
+		Self {
+			page_len,
+			entries,
+			page_index: 0,
+			current_page: None,
+		}
+	}
+}
+
+impl<E: Iterator<Item = Entry>> Iterator for Pages<E> {
+	type Item = GraphsPage;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match self.entries.next() {
+				Some(entry) => {
+					let entry_len = entry.encoded_len();
+					match self.current_page.as_mut() {
+						Some((page, len)) => {
+							if *len + entry_len <= self.page_len {
+								*len += entry_len;
+								page.0.push(entry);
+							} else {
+								let result = self.current_page.take().map(|(page, _)| page);
+								self.page_index += 1;
+								let page = GraphsPage(vec![entry]);
+								self.current_page = Some((page, entry_len));
+								break result;
+							}
+						}
+						None => {
+							let page = GraphsPage(vec![entry]);
+							self.current_page = Some((page, entry_len))
+						}
+					}
+				}
+				None => break self.current_page.take().map(|(page, _)| page),
+			}
+		}
 	}
 }

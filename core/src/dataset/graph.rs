@@ -2,7 +2,7 @@ use std::iter::Peekable;
 
 use locspan::Meta;
 
-use crate::{pattern, Cause, Id, Sign, Signed, Triple};
+use crate::{pattern, GraphFact, Id, Sign, Signed, Triple};
 
 pub trait Resource<'a> {
 	type TripleIndexes: 'a + Iterator<Item = u32>;
@@ -18,18 +18,15 @@ pub trait Graph<'a>: Clone {
 	type Error;
 	type Resource: Resource<'a>;
 
-	type Triples: Iterator<Item = Result<(u32, Meta<Signed<Triple>, Cause>), Self::Error>>;
+	type Triples: Iterator<Item = Result<(u32, GraphFact), Self::Error>>;
 
 	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error>;
 
-	fn get_triple(&self, index: u32) -> Result<Option<Meta<Signed<Triple>, Cause>>, Self::Error>;
+	fn get_triple(&self, index: u32) -> Result<Option<GraphFact>, Self::Error>;
 
 	fn triples(&self) -> Self::Triples;
 
-	fn find_triple(
-		&self,
-		triple: Triple,
-	) -> Result<Option<(u32, Meta<Signed<Triple>, Cause>)>, Self::Error> {
+	fn find_triple(&self, triple: Triple) -> Result<Option<(u32, GraphFact)>, Self::Error> {
 		self.unsigned_pattern_matching(triple.into())?
 			.next()
 			.transpose()
@@ -102,7 +99,7 @@ impl<'a, G: Graph<'a>> ResourceFacts<'a, G> {
 }
 
 impl<'a, G: Graph<'a>> Iterator for ResourceFacts<'a, G> {
-	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), G::Error>;
+	type Item = Result<(u32, GraphFact), G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
@@ -150,7 +147,7 @@ impl<'a, G: Graph<'a>> Iterator for ResourceFacts<'a, G> {
 pub struct MatchingQuads<'a, G: Graph<'a>>(Matching<'a, G>);
 
 impl<'a, G: Graph<'a>> Iterator for MatchingQuads<'a, G> {
-	type Item = Result<Meta<Signed<Triple>, Cause>, G::Error>;
+	type Item = Result<GraphFact, G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.0.next().map(|r| r.map(|(_, q)| q))
@@ -177,7 +174,7 @@ pub struct Matching<'a, G: Graph<'a>> {
 }
 
 impl<'a, G: Graph<'a>> Iterator for Matching<'a, G> {
-	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), G::Error>;
+	type Item = Result<(u32, GraphFact), G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.inner.find(|r| match r {
@@ -237,7 +234,7 @@ impl<'a, G: Graph<'a>> RawMatching<'a, G> {
 }
 
 impl<'a, G: Graph<'a>> Iterator for RawMatching<'a, G> {
-	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), G::Error>;
+	type Item = Result<(u32, GraphFact), G::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {

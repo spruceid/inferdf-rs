@@ -47,9 +47,23 @@ where
 
 #[derive(Debug, Default, Clone)]
 pub struct Resource {
-	as_subject: BTreeSet<usize>,
-	as_predicate: BTreeSet<usize>,
-	as_object: BTreeSet<usize>,
+	as_subject: BTreeSet<u32>,
+	as_predicate: BTreeSet<u32>,
+	as_object: BTreeSet<u32>,
+}
+
+impl Resource {
+	pub fn iter_as_subject(&self) -> impl '_ + Iterator<Item = u32> {
+		self.as_subject.iter().copied()
+	}
+
+	pub fn iter_as_predicate(&self) -> impl '_ + Iterator<Item = u32> {
+		self.as_predicate.iter().copied()
+	}
+
+	pub fn iter_as_object(&self) -> impl '_ + Iterator<Item = u32> {
+		self.as_object.iter().copied()
+	}
 }
 
 impl Graph {
@@ -57,6 +71,14 @@ impl Graph {
 		self.find_triple(triple)
 			.map(|(_, f)| f.sign() == sign)
 			.unwrap_or(false)
+	}
+
+	pub fn len(&self) -> usize {
+		self.facts.len()
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.facts.is_empty()
 	}
 
 	pub fn get(&self, i: usize) -> Option<&Fact> {
@@ -67,7 +89,15 @@ impl Graph {
 		self.facts.iter()
 	}
 
-	pub fn insert(&mut self, Meta(fact, meta): Fact) -> Result<(usize, bool), Contradiction> {
+	pub fn resource_count(&self) -> usize {
+		self.resources.len()
+	}
+
+	pub fn iter_resources(&self) -> impl Iterator<Item = (Id, &Resource)> {
+		self.resources.iter().map(|(id, r)| (*id, r))
+	}
+
+	pub fn insert(&mut self, Meta(fact, meta): Fact) -> Result<(u32, bool), Contradiction> {
 		match self.find_triple(*fact.value()) {
 			Some((i, current_fact)) => {
 				if current_fact.sign() == fact.sign() {
@@ -78,7 +108,7 @@ impl Graph {
 			}
 			None => {
 				let triple = *fact.value();
-				let i = self.facts.insert(Meta(fact, meta));
+				let i = self.facts.insert(Meta(fact, meta)) as u32;
 				self.resources
 					.entry(*triple.subject())
 					.or_default()
@@ -102,7 +132,7 @@ impl Graph {
 	pub fn try_extend(
 		&mut self,
 		facts: impl IntoIterator<Item = Fact>,
-	) -> Result<Vec<(usize, bool)>, Contradiction> {
+	) -> Result<Vec<(u32, bool)>, Contradiction> {
 		let mut indexes = Vec::new();
 
 		for s in facts {
@@ -137,7 +167,7 @@ impl Graph {
 				.unwrap()
 				.as_object
 				.remove(&i);
-			self.facts.remove(i)
+			self.facts.remove(i as usize)
 		})
 	}
 
@@ -158,19 +188,19 @@ impl Graph {
 
 		if let Some(r) = self.resources.remove(&id) {
 			for i in r.as_subject {
-				if let Some(s) = self.facts.try_remove(i) {
+				if let Some(s) = self.facts.try_remove(i as usize) {
 					facts.push(s)
 				}
 			}
 
 			for i in r.as_predicate {
-				if let Some(s) = self.facts.try_remove(i) {
+				if let Some(s) = self.facts.try_remove(i as usize) {
 					facts.push(s)
 				}
 			}
 
 			for i in r.as_object {
-				if let Some(s) = self.facts.try_remove(i) {
+				if let Some(s) = self.facts.try_remove(i as usize) {
 					facts.push(s)
 				}
 			}
@@ -179,7 +209,7 @@ impl Graph {
 		facts
 	}
 
-	pub fn find_triple(&self, triple: Triple) -> Option<(usize, &Fact)> {
+	pub fn find_triple(&self, triple: Triple) -> Option<(u32, &Fact)> {
 		self.matching(triple.into_pattern().into()).next()
 	}
 
@@ -308,9 +338,9 @@ pub enum ResourceFacts<'a> {
 	None,
 	Some {
 		facts: &'a Slab<Fact>,
-		subject: Peekable<Copied<std::collections::btree_set::Iter<'a, usize>>>,
-		predicate: Peekable<Copied<std::collections::btree_set::Iter<'a, usize>>>,
-		object: Peekable<Copied<std::collections::btree_set::Iter<'a, usize>>>,
+		subject: Peekable<Copied<std::collections::btree_set::Iter<'a, u32>>>,
+		predicate: Peekable<Copied<std::collections::btree_set::Iter<'a, u32>>>,
+		object: Peekable<Copied<std::collections::btree_set::Iter<'a, u32>>>,
 	},
 }
 
@@ -329,7 +359,7 @@ impl<'a> ResourceFacts<'a> {
 }
 
 impl<'a> Iterator for ResourceFacts<'a> {
-	type Item = (usize, &'a Fact);
+	type Item = (u32, &'a Fact);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
@@ -367,7 +397,7 @@ impl<'a> Iterator for ResourceFacts<'a> {
 						object.next();
 					}
 
-					(m, &facts[m])
+					(m, &facts[m as usize])
 				})
 			}
 		}
@@ -394,7 +424,7 @@ pub struct Matching<'a> {
 }
 
 impl<'a> Iterator for Matching<'a> {
-	type Item = (usize, &'a Fact);
+	type Item = (u32, &'a Fact);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.inner
@@ -407,19 +437,19 @@ enum InnerMatching<'a> {
 	All(slab::Iter<'a, Fact>),
 	Constrained {
 		facts: &'a Slab<Fact>,
-		subject: Option<std::collections::btree_set::Iter<'a, usize>>,
-		predicate: Option<std::collections::btree_set::Iter<'a, usize>>,
-		object: Option<std::collections::btree_set::Iter<'a, usize>>,
+		subject: Option<std::collections::btree_set::Iter<'a, u32>>,
+		predicate: Option<std::collections::btree_set::Iter<'a, u32>>,
+		object: Option<std::collections::btree_set::Iter<'a, u32>>,
 	},
 }
 
 impl<'a> Iterator for InnerMatching<'a> {
-	type Item = (usize, &'a Fact);
+	type Item = (u32, &'a Fact);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		match self {
 			Self::None => None,
-			Self::All(iter) => iter.next(),
+			Self::All(iter) => iter.next().map(|(i, f)| (i as u32, f)),
 			Self::Constrained {
 				facts,
 				subject,
@@ -480,7 +510,7 @@ impl<'a> Iterator for InnerMatching<'a> {
 					state = state.next();
 				}
 
-				candidate.map(|i| (i, &facts[i]))
+				candidate.map(|i| (i, &facts[i as usize]))
 			}
 		}
 	}

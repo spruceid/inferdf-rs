@@ -8,12 +8,16 @@ mod utils;
 pub use cause::*;
 pub use dataset::Dataset;
 pub use interpretation::Interpretation;
+use locspan::Meta;
 pub use pattern::Pattern;
 use rdf_types::Vocabulary;
 pub use utils::*;
 
 pub type Triple = rdf_types::Triple<Id, Id, Id>;
 pub type Quad = rdf_types::Quad<Id, Id, Id, Id>;
+
+pub type GraphFact = Meta<Signed<Triple>, Cause>;
+pub type Fact = Meta<Signed<Quad>, Cause>;
 
 pub trait Module<V: Vocabulary> {
 	type Error;

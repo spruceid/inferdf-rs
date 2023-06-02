@@ -6,7 +6,7 @@ use std::hash::Hash;
 use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::{self, composite, InterpretationMut},
-	uninterpreted, Entailment, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect,
+	uninterpreted, Entailment, Fact, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect,
 };
 
 use crate::semantics::Semantics;
@@ -64,14 +64,11 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 		dependencies: Dependencies<V, D>,
 		interpretation: composite::Interpretation<V>,
 		semantics: S,
-	) -> Self
-	where
-		D: Default,
-	{
+	) -> Self {
 		Self {
 			interpretation,
 			data: Data {
-				set: dataset::Standard::new(),
+				set: dataset::LocalDataset::new(),
 				dependencies,
 			},
 			semantics,
@@ -83,7 +80,7 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 		&self.interpretation
 	}
 
-	pub fn dataset(&self) -> &dataset::Standard {
+	pub fn dataset(&self) -> &dataset::LocalDataset {
 		&self.data.set
 	}
 }
@@ -166,7 +163,7 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 	pub fn insert(
 		&mut self,
 		vocabulary: &mut V,
-		Meta(Signed(sign, quad), cause): dataset::Fact,
+		Meta(Signed(sign, quad), cause): Fact,
 	) -> Result<(), Error<D::Error>>
 	where
 		V::Iri: Copy + Eq + Hash,
@@ -257,7 +254,7 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 }
 
 pub struct Data<V: Vocabulary, D: Module<V>> {
-	set: dataset::Standard,
+	set: dataset::LocalDataset,
 	dependencies: Dependencies<V, D>,
 }
 
@@ -298,12 +295,12 @@ impl<V: Vocabulary, D: Module<V>> Data<V, D> {
 /// Facts are given in the dependency interpretation, not the top level interpretation.
 pub struct ResourceFacts<'a, D: Dataset<'a>> {
 	id: Id,
-	toplevel: dataset::standard::ResourceFacts<'a>,
+	toplevel: dataset::local::ResourceFacts<'a>,
 	dependencies: Vec<(usize, Id, dataset::ResourceFacts<'a, D>)>,
 }
 
 impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
-	type Item = Result<(Option<usize>, Id, dataset::Fact), D::Error>;
+	type Item = Result<(Option<usize>, Id, Fact), D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.toplevel

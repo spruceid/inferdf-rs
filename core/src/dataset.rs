@@ -1,16 +1,14 @@
 use locspan::Meta;
 
-use crate::{pattern, Cause, FailibleIterator, Id, Quad, Sign, Signed, Triple};
+use crate::{pattern, Fact, FailibleIterator, Id, Sign, Signed, Triple};
 
 pub mod graph;
-pub mod standard;
+pub mod local;
 
 pub use graph::Graph;
-pub use standard::Standard;
+pub use local::LocalDataset;
 
 pub struct Contradiction(pub Triple);
-
-pub type Fact = Meta<Signed<Quad>, Cause>;
 
 /// RDF dataset.
 pub trait Dataset<'a>: Clone {
@@ -32,10 +30,7 @@ pub trait Dataset<'a>: Clone {
 		}
 	}
 
-	fn find_triple(
-		&self,
-		triple: Triple,
-	) -> Result<Option<(TripleId, Meta<Signed<Quad>, Cause>)>, Self::Error> {
+	fn find_triple(&self, triple: Triple) -> Result<Option<(TripleId, Fact)>, Self::Error> {
 		for g in self.graphs() {
 			let (g, graph) = g?;
 			if let Some((i, Meta(Signed(sign, t), meta))) = graph.find_triple(triple)? {
@@ -120,7 +115,7 @@ impl<'a, D: Dataset<'a>> ResourceFacts<'a, D> {
 
 impl<'a, D: Dataset<'a>> FailibleIterator for ResourceFacts<'a, D> {
 	type Error = D::Error;
-	type Item = (TripleId, Meta<Signed<Quad>, Cause>);
+	type Item = (TripleId, Fact);
 
 	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
 		loop {
@@ -147,7 +142,7 @@ impl<'a, D: Dataset<'a>> FailibleIterator for ResourceFacts<'a, D> {
 }
 
 impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
-	type Item = Result<(TripleId, Meta<Signed<Quad>, Cause>), D::Error>;
+	type Item = Result<(TripleId, Fact), D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.try_next().transpose()
@@ -168,7 +163,7 @@ impl<'a, D: Dataset<'a>> Matching<'a, D> {
 }
 
 impl<'a, D: Dataset<'a>> FailibleIterator for Matching<'a, D> {
-	type Item = (TripleId, Meta<Signed<Quad>, Cause>);
+	type Item = (TripleId, Fact);
 	type Error = D::Error;
 
 	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
@@ -197,7 +192,7 @@ impl<'a, D: Dataset<'a>> FailibleIterator for Matching<'a, D> {
 }
 
 impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> {
-	type Item = Result<(TripleId, Meta<Signed<Quad>, Cause>), D::Error>;
+	type Item = Result<(TripleId, Fact), D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.try_next().transpose()
@@ -207,7 +202,7 @@ impl<'a, D: Dataset<'a>> Iterator for Matching<'a, D> {
 pub struct MatchingQuads<'a, D: Dataset<'a>>(Matching<'a, D>);
 
 impl<'a, D: Dataset<'a>> FailibleIterator for MatchingQuads<'a, D> {
-	type Item = Meta<Signed<Quad>, Cause>;
+	type Item = Fact;
 	type Error = D::Error;
 
 	fn try_next(&mut self) -> Result<Option<Self::Item>, D::Error> {
@@ -216,7 +211,7 @@ impl<'a, D: Dataset<'a>> FailibleIterator for MatchingQuads<'a, D> {
 }
 
 impl<'a, D: Dataset<'a>> Iterator for MatchingQuads<'a, D> {
-	type Item = Result<Meta<Signed<Quad>, Cause>, D::Error>;
+	type Item = Result<Fact, D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.try_next().transpose()

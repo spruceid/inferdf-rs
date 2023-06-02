@@ -4,11 +4,16 @@ use inferdf_core::{Cause, Id, Sign, Signed};
 use iref::IriBuf;
 use langtag::LanguageTagBuf;
 use locspan::Meta;
-use rdf_types::{literal, Literal};
+use rdf_types::{
+	literal,
+	vocabulary::{IriIndex, LanguageTagIndex, LiteralIndex},
+	IriVocabularyMut, LanguageTagVocabularyMut, Literal, LiteralVocabularyMut,
+};
 
-use crate::{page, Header, Tag, Version, HEADER_TAG, VERSION};
-
-use super::{IriPath, LiteralPath};
+use crate::{
+	module::{IriPath, LiteralPath},
+	page, Header, Tag, Version, HEADER_TAG, VERSION,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -64,8 +69,8 @@ impl Decode for Header {
 			iri_page_count: u32::decode(input)?,
 			literal_count: u32::decode(input)?,
 			literal_page_count: u32::decode(input)?,
-			graph_count: u32::decode(input)?,
-			graph_page_count: u32::decode(input)?,
+			named_graph_count: u32::decode(input)?,
+			named_graph_page_count: u32::decode(input)?,
 			default_graph: page::graphs::Description::decode(input)?,
 		})
 	}
@@ -194,6 +199,33 @@ impl Decode for Cause {
 	}
 }
 
+impl<V: IriVocabularyMut<Iri = IriIndex>> DecodeWith<V> for IriIndex {
+	fn decode_with(vocabulary: &mut V, input: &mut impl Read) -> Result<Self, Error> {
+		let iri = IriBuf::decode(input)?;
+		Ok(vocabulary.insert_owned(iri))
+	}
+}
+
+impl<V: LiteralVocabularyMut<Literal = LiteralIndex>> DecodeWith<V> for LiteralIndex
+where
+	V::Type: DecodeWith<V>,
+	V::Value: Decode,
+{
+	fn decode_with(vocabulary: &mut V, input: &mut impl Read) -> Result<Self, Error> {
+		let literal = Literal::decode_with(vocabulary, input)?;
+		Ok(vocabulary.insert_owned_literal(literal))
+	}
+}
+
+impl<V: LanguageTagVocabularyMut<LanguageTag = LanguageTagIndex>> DecodeWith<V>
+	for LanguageTagIndex
+{
+	fn decode_with(vocabulary: &mut V, input: &mut impl Read) -> Result<Self, Error> {
+		let tag = LanguageTagBuf::decode(input)?;
+		Ok(vocabulary.insert_language_tag(tag.as_ref()))
+	}
+}
+
 impl Decode for IriPath {
 	fn decode(input: &mut impl Read) -> Result<Self, Error> {
 		Ok(Self {
@@ -245,9 +277,29 @@ impl<I: Decode, L: Decode> Decode for literal::Type<I, L> {
 	}
 }
 
+impl<V, I: DecodeWith<V>, L: DecodeWith<V>> DecodeWith<V> for literal::Type<I, L> {
+	fn decode_with(vocabulary: &mut V, input: &mut impl Read) -> Result<Self, Error> {
+		let mut d = 0;
+		input.read_exact(std::slice::from_mut(&mut d))?;
+		match d {
+			0 => Ok(Self::Any(I::decode_with(vocabulary, input)?)),
+			1 => Ok(Self::LangString(L::decode_with(vocabulary, input)?)),
+			_ => Err(Error::InvalidLiteralType),
+		}
+	}
+}
+
 impl<T: Decode, S: Decode> Decode for Literal<T, S> {
 	fn decode(input: &mut impl Read) -> Result<Self, Error> {
 		let type_ = T::decode(input)?;
+		let value = S::decode(input)?;
+		Ok(Self::new(value, type_))
+	}
+}
+
+impl<V, T: DecodeWith<V>, S: Decode> DecodeWith<V> for Literal<T, S> {
+	fn decode_with(vocabulary: &mut V, input: &mut impl Read) -> Result<Self, Error> {
+		let type_ = T::decode_with(vocabulary, input)?;
 		let value = S::decode(input)?;
 		Ok(Self::new(value, type_))
 	}

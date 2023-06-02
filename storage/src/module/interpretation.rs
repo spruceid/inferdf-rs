@@ -4,9 +4,9 @@ use derivative::Derivative;
 use inferdf_core::{Id, IteratorWith};
 use rdf_types::Vocabulary;
 
-use crate::{binary_search_page, page};
+use crate::{binary_search_page, page, DecodeWith};
 
-use super::{cache, DecodeWith, Error, Module};
+use super::{cache, Error, Module};
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Copy(bound = ""))]

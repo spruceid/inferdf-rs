@@ -90,7 +90,7 @@ impl<'a, D: Dataset<'a>> Iterator for DependencyPatternMatching<'a, D> {
 
 pub struct PatternMatching<'a, V: Vocabulary, D: Module<V>> {
 	interpretation: &'a composite::Interpretation<V>,
-	dataset_iter: dataset::standard::MatchingQuads<'a>,
+	dataset_iter: dataset::local::MatchingQuads<'a>,
 	dependencies: DependenciesIter<'a, V, D>,
 	current: Option<DependencyPatternMatching<'a, D::Dataset<'a>>>,
 	pattern: Signed<pattern::Canonical>,

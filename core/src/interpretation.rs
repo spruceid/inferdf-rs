@@ -5,6 +5,9 @@ use crate::{uninterpreted, Id, IteratorWith};
 pub mod composite;
 pub mod local;
 
+pub use composite::Interpretation as Composite;
+pub use local::LocalInterpretation;
+
 pub struct Contradiction(pub Id, pub Id);
 
 pub trait Resource<'a, V: Vocabulary>: Clone {

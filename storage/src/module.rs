@@ -1,6 +1,5 @@
 pub mod cache;
 pub mod dataset;
-pub mod decode;
 pub mod interpretation;
 
 use std::{
@@ -10,17 +9,22 @@ use std::{
 
 pub use cache::CacheMap;
 pub use dataset::Dataset;
-pub use decode::{Decode, DecodeSized, DecodeWith};
 pub use interpretation::Interpretation;
 use rdf_types::Vocabulary;
 
-use crate::{page, Header, Sections};
+use crate::{
+	decode::{self, Decode},
+	page, DecodeSized, DecodeWith, Header, Sections,
+};
 
 pub use page::Page;
 
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("not enough memory")]
 	NotEnoughMemory,
-	Busy,
+
+	#[error(transparent)]
 	Decode(decode::Error),
 }
 
@@ -29,7 +33,7 @@ impl<T> From<cache::Error<T, decode::Error>> for Error {
 		match value {
 			cache::Error::IO(e) => Self::Decode(e),
 			cache::Error::NotEnoughMemory(_) => Self::NotEnoughMemory,
-			cache::Error::Busy => Self::Busy,
+			cache::Error::Busy => panic!("cache page is busy"),
 		}
 	}
 }
@@ -38,8 +42,6 @@ pub struct Module<V: Vocabulary, R> {
 	inner: RefCell<BufReader<R>>,
 	header: Header,
 	sections: Sections,
-	graphs_per_page: u32,
-	triples_per_page: u32,
 	cache: CacheMap<u32, Page<V>>,
 }
 
@@ -54,15 +56,11 @@ impl<V: Vocabulary, R: Read + Seek> Module<V, R> {
 	) -> Result<Self, decode::Error> {
 		let header = Header::decode(&mut reader)?;
 		let sections = Sections::new(&header);
-		let graphs_per_page = header.page_size / page::graphs::Entry::LEN as u32;
-		let triples_per_page = header.page_size / page::triples::FACT_LEN as u32;
 
 		Ok(Self {
 			inner: RefCell::new(reader),
 			header,
 			sections,
-			graphs_per_page,
-			triples_per_page,
 			cache: CacheMap::with_capacity(capacity),
 		})
 	}
@@ -194,10 +192,22 @@ pub struct IriPath {
 	pub index: u32,
 }
 
+impl IriPath {
+	pub fn new(page: u32, index: u32) -> Self {
+		Self { page, index }
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LiteralPath {
 	pub page: u32,
 	pub index: u32,
+}
+
+impl LiteralPath {
+	pub fn new(page: u32, index: u32) -> Self {
+		Self { page, index }
+	}
 }
 
 impl<V: Vocabulary, R: Read + Seek> inferdf_core::Module<V> for Module<V, R>

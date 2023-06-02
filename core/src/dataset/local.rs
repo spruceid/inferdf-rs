@@ -28,14 +28,18 @@ impl IntoGraphFact for Meta<Signed<Quad>, Cause> {
 /// Standard dataset.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct Standard {
+pub struct LocalDataset {
 	default_graph: Graph,
 	named_graphs: HashMap<Id, Graph>,
 }
 
-impl Standard {
+impl LocalDataset {
 	pub fn new() -> Self {
 		Self::default()
+	}
+
+	pub fn named_graph_count(&self) -> usize {
+		self.named_graphs.len()
 	}
 
 	pub fn contains_triple(&self, triple: Triple, sign: Sign) -> bool {
@@ -43,7 +47,7 @@ impl Standard {
 			|| self.named_graphs.values().any(|g| g.contains(triple, sign))
 	}
 
-	pub fn find_triple(&self, triple: Triple) -> Option<(Option<Id>, usize, &graph::Fact)> {
+	pub fn find_triple(&self, triple: Triple) -> Option<(Option<Id>, u32, &graph::Fact)> {
 		self.default_graph
 			.find_triple(triple)
 			.map(|(i, t)| (None, i, t))
@@ -52,6 +56,10 @@ impl Standard {
 					.iter()
 					.find_map(|(g, graph)| graph.find_triple(triple).map(|(i, t)| (Some(*g), i, t)))
 			})
+	}
+
+	pub fn default_graph(&self) -> &Graph {
+		&self.default_graph
 	}
 
 	pub fn graph(&self, id: Option<Id>) -> Option<&Graph> {
@@ -72,6 +80,12 @@ impl Standard {
 		Iter {
 			graphs: self.graphs(),
 			current: None,
+		}
+	}
+
+	pub fn named_graphs(&self) -> NamedGraphs {
+		NamedGraphs {
+			named_graphs: self.named_graphs.iter(),
 		}
 	}
 
@@ -100,7 +114,7 @@ impl Standard {
 	pub fn insert(
 		&mut self,
 		fact: Meta<Signed<Quad>, Cause>,
-	) -> Result<(Option<Id>, usize, bool), Contradiction> {
+	) -> Result<(Option<Id>, u32, bool), Contradiction> {
 		let (fact, g) = fact.into_graph_fact();
 		match g {
 			None => {
@@ -166,6 +180,18 @@ impl Standard {
 			current: None,
 			sign: Some(sign),
 		}
+	}
+}
+
+pub struct NamedGraphs<'a> {
+	named_graphs: hashbrown::hash_map::Iter<'a, Id, Graph>,
+}
+
+impl<'a> Iterator for NamedGraphs<'a> {
+	type Item = (Id, &'a Graph);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.named_graphs.next().map(|(id, g)| (*id, g))
 	}
 }
 
@@ -242,7 +268,7 @@ impl<'a> Matching<'a> {
 }
 
 impl<'a> Iterator for Matching<'a> {
-	type Item = (Option<Id>, usize, &'a graph::Fact);
+	type Item = (Option<Id>, u32, &'a graph::Fact);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		loop {

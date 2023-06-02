@@ -12,14 +12,14 @@ use super::{Contradiction, InterpretationMut};
 /// RDF interpretation.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct Interpretation<V: Vocabulary> {
+pub struct LocalInterpretation<V: Vocabulary> {
 	resources: Slab<Resource<V>>,
 	by_iri: HashMap<V::Iri, Id>,
 	by_blank: HashMap<V::BlankId, Id>,
 	by_literal: HashMap<V::Literal, Id>,
 }
 
-impl<'a, V: Vocabulary> InterpretationMut<'a, V> for Interpretation<V>
+impl<'a, V: Vocabulary> InterpretationMut<'a, V> for LocalInterpretation<V>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,
@@ -89,7 +89,7 @@ impl<V: Vocabulary> Resource<V> {
 
 pub type ResourceLiteralInstances<V> = HashMap<<V as LiteralVocabulary>::Literal, Id>;
 
-impl<V: Vocabulary> Interpretation<V> {
+impl<V: Vocabulary> LocalInterpretation<V> {
 	pub fn terms_of(&self, id: Id) -> TermsOf<V>
 	where
 		V::Iri: Copy,
@@ -124,6 +124,14 @@ impl<V: Vocabulary> Interpretation<V> {
 		result
 	}
 
+	pub fn len(&self) -> u32 {
+		self.resources.len() as u32
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.resources.is_empty()
+	}
+
 	pub fn get(&self, id: Id) -> Option<&Resource<V>> {
 		self.resources.get(id.index())
 	}
@@ -132,8 +140,23 @@ impl<V: Vocabulary> Interpretation<V> {
 		self.resources.get_mut(id.index())
 	}
 
+	/// Iterate over the resource, ordered by id.
+	pub fn iter(&self) -> Iter<V> {
+		Iter {
+			inner: self.resources.iter(),
+		}
+	}
+
 	pub fn new_resource(&mut self) -> Id {
 		Id(self.resources.insert(Resource::new()) as u32)
+	}
+
+	pub fn terms_by_iri(&self) -> &HashMap<V::Iri, Id> {
+		&self.by_iri
+	}
+
+	pub fn terms_by_literal(&self) -> &HashMap<V::Literal, Id> {
+		&self.by_literal
 	}
 
 	pub fn term_interpretation(&self, term: uninterpreted::Term<V>) -> Option<Id>
@@ -279,6 +302,18 @@ impl<V: Vocabulary> Interpretation<V> {
 			self.resources[a.index()].different_from.insert(b);
 			Ok(self.resources[b.index()].different_from.insert(a))
 		}
+	}
+}
+
+pub struct Iter<'a, V: Vocabulary> {
+	inner: slab::Iter<'a, Resource<V>>,
+}
+
+impl<'a, V: Vocabulary> Iterator for Iter<'a, V> {
+	type Item = (Id, &'a Resource<V>);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner.next().map(|(i, r)| (Id(i as u32), r))
 	}
 }
 

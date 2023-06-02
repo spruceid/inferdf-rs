@@ -42,11 +42,12 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Gra
 	}
 
 	fn get_triple(&self, i: u32) -> Result<Option<Meta<Signed<Triple>, Cause>>, Error> {
-		let (p, page_i) = page::TriplesPage::triple_page_index(self.module.triples_per_page, i);
+		let (p, page_i) =
+			page::TriplesPage::triple_page_index(self.module.sections.triples_per_page, i);
 		let page_triples_count = page::triples::page_triple_count(
 			self.desc.triple_count,
 			p,
-			self.module.triples_per_page,
+			self.module.sections.triples_per_page,
 		);
 		if p < self.desc.triple_page_count {
 			let page = self
@@ -133,7 +134,7 @@ impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Triples<'a, V, R> {
 				let page_triples_count = page::triples::page_triple_count(
 					self.triple_count,
 					self.page_index,
-					self.module.triples_per_page,
+					self.module.sections.triples_per_page,
 				);
 				Ok(cache::Ref::aliasing_map(
 					self.module

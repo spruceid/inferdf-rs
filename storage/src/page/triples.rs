@@ -2,8 +2,8 @@ use inferdf_core::{Cause, Signed, Triple};
 use locspan::Meta;
 
 use crate::{
-	module::{self, Decode, DecodeSized},
-	writer::Encode,
+	decode::{self, Decode, DecodeSized},
+	encode::{Encode, EncodedLen},
 };
 
 const SIGN_LEN: u32 = 1;
@@ -40,21 +40,14 @@ impl TriplesPage {
 
 pub type Iter<'a> = std::iter::Copied<std::slice::Iter<'a, Meta<Signed<Triple>, Cause>>>;
 
-impl<V> Encode<V> for TriplesPage {
-	fn encode(
-		&self,
-		vocabulary: &V,
-		output: &mut impl std::io::Write,
-	) -> Result<(), std::io::Error> {
-		self.0.encode(vocabulary, output)
+impl Encode for TriplesPage {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+		self.0.encode(output)
 	}
 }
 
 impl DecodeSized for TriplesPage {
-	fn decode_sized(
-		input: &mut impl std::io::Read,
-		len: u32,
-	) -> Result<Self, module::decode::Error> {
+	fn decode_sized(input: &mut impl std::io::Read, len: u32) -> Result<Self, decode::Error> {
 		let mut triples = Vec::with_capacity(len as usize);
 
 		for _i in 0..len {
@@ -65,23 +58,70 @@ impl DecodeSized for TriplesPage {
 	}
 }
 
-impl<V> Encode<V> for Triple {
-	fn encode(
-		&self,
-		vocabulary: &V,
-		output: &mut impl std::io::Write,
-	) -> Result<(), std::io::Error> {
-		self.0.encode(vocabulary, output)?;
-		self.1.encode(vocabulary, output)?;
-		self.2.encode(vocabulary, output)
+impl Encode for Triple {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+		self.0.encode(output)?;
+		self.1.encode(output)?;
+		self.2.encode(output)
 	}
 }
 
 impl Decode for Triple {
-	fn decode(input: &mut impl std::io::Read) -> Result<Self, module::decode::Error> {
+	fn decode(input: &mut impl std::io::Read) -> Result<Self, decode::Error> {
 		let s = u32::decode(input)?;
 		let p = u32::decode(input)?;
 		let o = u32::decode(input)?;
 		Ok(Self::new(s.into(), p.into(), o.into()))
+	}
+}
+
+pub struct Pages<E> {
+	page_len: u32,
+	entries: E,
+	page_index: u32,
+	current_page: Option<(TriplesPage, u32)>,
+}
+
+impl<E> Pages<E> {
+	pub fn new(page_len: u32, entries: E) -> Self {
+		Self {
+			page_len,
+			entries,
+			page_index: 0,
+			current_page: None,
+		}
+	}
+}
+
+impl<E: Iterator<Item = Meta<Signed<Triple>, Cause>>> Iterator for Pages<E> {
+	type Item = TriplesPage;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match self.entries.next() {
+				Some(entry) => {
+					let entry_len = entry.encoded_len();
+					match self.current_page.as_mut() {
+						Some((page, len)) => {
+							if *len + entry_len <= self.page_len {
+								*len += entry_len;
+								page.0.push(entry);
+							} else {
+								let result = self.current_page.take().map(|(page, _)| page);
+								self.page_index += 1;
+								let page = TriplesPage(vec![entry]);
+								self.current_page = Some((page, entry_len));
+								break result;
+							}
+						}
+						None => {
+							let page = TriplesPage(vec![entry]);
+							self.current_page = Some((page, entry_len))
+						}
+					}
+				}
+				None => break self.current_page.take().map(|(page, _)| page),
+			}
+		}
 	}
 }
