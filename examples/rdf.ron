@@ -1,5 +1,6 @@
 [
 	(
+		id: Id(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#propertiesAreProperties")),
 		hypothesis: [
 			(Positive, (
 				Var(0),
@@ -8,11 +9,11 @@
 			))
 		],
 		conclusion: [
-			(Positive, Triple((
+			Untrusted((Positive, Triple((
 				Var(1),
 				Id(Id(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))),
 				Id(Id(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"))),
-			)))
+			))))
 		]
 	)
 ]

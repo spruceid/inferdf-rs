@@ -6,10 +6,10 @@ use std::hash::Hash;
 use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::{self, composite, InterpretationMut},
-	uninterpreted, Entailment, Fact, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect,
+	uninterpreted, Cause, Entailment, Fact, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect,
 };
 
-use crate::semantics::Semantics;
+use crate::semantics::{inference::rule::TripleStatement, Context, MaybeTrusted, Semantics};
 
 mod context;
 mod dependency;
@@ -57,6 +57,7 @@ pub struct Builder<V: Vocabulary, D: Module<V>, S> {
 	data: Data<V, D>,
 	semantics: S,
 	entailments: IndexSet<Entailment>,
+	to_check: Vec<Meta<Signed<TripleStatement>, Cause>>,
 }
 
 impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
@@ -73,6 +74,7 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 			},
 			semantics,
 			entailments: IndexSet::new(),
+			to_check: Vec::new(),
 		}
 	}
 
@@ -83,7 +85,33 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 	pub fn dataset(&self) -> &dataset::LocalDataset {
 		&self.data.set
 	}
+
+	pub fn check(&mut self) -> Result<(), MissingStatement> {
+		let context = BuilderContext::new(&mut self.interpretation, &self.data);
+		for Meta(Signed(sign, statement), cause) in std::mem::take(&mut self.to_check) {
+			match statement {
+				TripleStatement::Triple(triple) => {
+					if context
+						.pattern_matching(Signed(sign, triple.into()))
+						.next()
+						.is_none()
+					{
+						return Err(MissingStatement(Meta(Signed(sign, statement), cause)));
+					}
+				}
+				TripleStatement::Eq(_, _) => {
+					todo!()
+				}
+			}
+		}
+
+		Ok(())
+	}
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("missing statement")]
+pub struct MissingStatement(pub Meta<Signed<TripleStatement>, Cause>);
 
 impl<'a, V: Vocabulary, D: Module<V>, S: Semantics> InterpretationMut<'a, V> for Builder<V, D, S>
 where
@@ -185,17 +213,22 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 							self.data.set.insert(Meta(Signed(sign, quad), cause))?;
 
 						if inserted {
-							let mut context = Context::new(&mut self.interpretation, &self.data);
+							let mut context =
+								BuilderContext::new(&mut self.interpretation, &self.data);
 							self.semantics
 								.deduce(
 									&mut context,
 									Signed(sign, triple),
 									|e| self.entailments.insert_full(e).0 as u32,
-									|Meta(Signed(sign, statement), cause)| {
-										stack.push(Meta(
-											Signed(sign, statement.with_graph(g)),
-											cause,
-										))
+									|Meta(statement, cause)| match statement {
+										MaybeTrusted::Trusted(Signed(sign, statement)) => stack
+											.push(Meta(
+												Signed(sign, statement.with_graph(g)),
+												cause,
+											)),
+										MaybeTrusted::Untrusted(signed_statement) => {
+											self.to_check.push(Meta(signed_statement, cause))
+										}
 									},
 								)
 								.map_err(Error::Dependency)?
@@ -230,14 +263,18 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 							)
 							.map_err(Error::Dependency)?;
 
-						let mut context = Context::new(&mut self.interpretation, &self.data);
+						let mut context = BuilderContext::new(&mut self.interpretation, &self.data);
 						self.semantics
 							.deduce(
 								&mut context,
 								Signed(sign, triple),
 								|e| self.entailments.insert_full(e).0 as u32,
-								|Meta(Signed(sign, statement), cause)| {
-									stack.push(Meta(Signed(sign, statement.with_graph(g)), cause))
+								|Meta(statement, cause)| match statement {
+									MaybeTrusted::Trusted(Signed(sign, statement)) => stack
+										.push(Meta(Signed(sign, statement.with_graph(g)), cause)),
+									MaybeTrusted::Untrusted(signed_statement) => {
+										self.to_check.push(Meta(signed_statement, cause))
+									}
 								},
 							)
 							.map_err(Error::Dependency)?;

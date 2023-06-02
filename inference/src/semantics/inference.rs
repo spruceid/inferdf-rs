@@ -11,7 +11,7 @@ use inferdf_core::{
 
 use self::rule::TripleStatement;
 
-use super::{Context, Semantics};
+use super::{Context, MaybeTrusted, Semantics};
 
 /// Induction rules.
 #[derive(Debug, Default)]
@@ -54,7 +54,7 @@ impl System {
 		context: &mut C,
 		triple: Signed<Triple>,
 		mut entailment_index: impl FnMut(Entailment) -> u32,
-		mut new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
+		mut new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
 	) -> Result<(), C::Error> {
 		for &path in self.paths.get(triple) {
 			self.deduce_from(
@@ -75,7 +75,7 @@ impl System {
 		triple: Signed<Triple>,
 		path: Path,
 		entailment_index: &mut impl FnMut(Entailment) -> u32,
-		new_triple: &mut impl FnMut(Meta<Signed<TripleStatement>, Cause>),
+		new_triple: &mut impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
 	) -> Result<(), C::Error> {
 		let rule = self.get(path.rule).unwrap();
 		let pattern = rule.hypothesis.patterns[path.pattern];
@@ -146,7 +146,7 @@ impl Semantics for System {
 		context: &mut C,
 		triple: Signed<Triple>,
 		entailment_index: impl FnMut(Entailment) -> u32,
-		new_triple: impl FnMut(Meta<Signed<TripleStatement>, Cause>),
+		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
 	) -> Result<(), C::Error> {
 		self.deduce(context, triple, entailment_index, new_triple)
 	}

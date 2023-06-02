@@ -11,12 +11,12 @@ use crate::semantics;
 
 use super::{Data, DependenciesIter};
 
-pub struct Context<'a, V: Vocabulary, D: Module<V>> {
+pub struct BuilderContext<'a, V: Vocabulary, D: Module<V>> {
 	interpretation: &'a mut composite::Interpretation<V>,
 	data: &'a Data<V, D>,
 }
 
-impl<'a, V: Vocabulary, D: Module<V>> Context<'a, V, D> {
+impl<'a, V: Vocabulary, D: Module<V>> BuilderContext<'a, V, D> {
 	pub fn new(interpretation: &'a mut composite::Interpretation<V>, data: &'a Data<V, D>) -> Self {
 		Self {
 			interpretation,
@@ -25,7 +25,7 @@ impl<'a, V: Vocabulary, D: Module<V>> Context<'a, V, D> {
 	}
 }
 
-impl<'a, V: Vocabulary, D: Module<V>> semantics::Context for Context<'a, V, D> {
+impl<'a, V: Vocabulary, D: Module<V>> semantics::Context for BuilderContext<'a, V, D> {
 	type Error = D::Error;
 	type PatternMatching<'r> = PatternMatching<'r, V, D> where Self: 'r;
 

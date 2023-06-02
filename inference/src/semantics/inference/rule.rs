@@ -7,7 +7,7 @@ use inferdf_core::{
 	uninterpreted, Id, Pattern, Signed, Triple,
 };
 
-use crate::builder::QuadStatement;
+use crate::{builder::QuadStatement, semantics::MaybeTrusted};
 
 /// Inference rule.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -102,7 +102,7 @@ impl<V: Vocabulary> Interpret<V> for Hypothesis<uninterpreted::Term<V>> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Conclusion<T = Id> {
-	pub statements: Vec<Signed<StatementPattern<T>>>,
+	pub statements: Vec<MaybeTrusted<Signed<StatementPattern<T>>>>,
 }
 
 impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Conclusion<T> {

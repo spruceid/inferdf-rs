@@ -1,0 +1,53 @@
+[
+	(
+		// Everything is a resource.
+		id: Id(Iri("http://www.w3.org/2000/01/rdf-schema#Resource")),
+		hypothesis: [
+			(Positive, (
+				Var(0),
+				Var(1),
+				Var(2)
+			))
+		],
+		conclusion: [
+			Trusted((Positive, Triple((
+				Var(0),
+				Id(Id(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))),
+				Id(Id(Iri("http://www.w3.org/2000/01/rdf-schema#Resource"))),
+			)))),
+			Trusted((Positive, Triple((
+				Var(1),
+				Id(Id(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))),
+				Id(Id(Iri("http://www.w3.org/2000/01/rdf-schema#Resource"))),
+			)))),
+			Trusted((Positive, Triple((
+				Var(2),
+				Id(Id(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))),
+				Id(Id(Iri("http://www.w3.org/2000/01/rdf-schema#Resource"))),
+			))))
+		]
+	),
+	(
+		// Property domain.
+		id: Id(Iri("http://www.w3.org/2000/01/rdf-schema#domain")),
+		hypothesis: [
+			(Positive, (
+				Var(0),
+				Id(Id(Iri("http://www.w3.org/2000/01/rdf-schema#domain"))),
+				Var(1)
+			)),
+			(Positive, (
+				Var(2),
+				Var(0),
+				Var(3)
+			))
+		],
+		conclusion: [
+			Untrusted((Positive, Triple((
+				Var(2),
+				Id(Id(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))),
+				Var(1),
+			))))
+		]
+	)
+]

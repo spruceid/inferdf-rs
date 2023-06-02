@@ -5,8 +5,11 @@ use inferdf_core::{
 	Cause, Sign, Signed,
 };
 use inferdf_inference::{
-	builder::{self, Builder},
-	semantics::{self, inference::Rule},
+	builder::{self, Builder, MissingStatement},
+	semantics::{
+		self,
+		inference::{rule::TripleStatement, Rule},
+	},
 };
 use locspan::Meta;
 use nquads_syntax::Parse;
@@ -87,20 +90,36 @@ fn main() {
 						panic!("contradiction")
 					}
 				}
-
-				let interpretation = builder.interpretation().inner_interpretation();
-				for q in builder.dataset().iter().into_quads() {
-					let s = interpretation.terms_of(*q.subject()).next().unwrap();
-					let p = interpretation.terms_of(*q.predicate()).next().unwrap();
-					let o = interpretation.terms_of(*q.object()).next().unwrap();
-					let g = q
-						.graph()
-						.map(|g| interpretation.terms_of(*g).next().unwrap());
-					println!("{} .", rdf_types::Quad(s, p, o, g).with(&vocabulary))
-				}
 			}
 			Err(_) => {
 				panic!("unable to parse input files")
+			}
+		}
+	}
+
+	let interpretation = builder.interpretation().inner_interpretation();
+	for q in builder.dataset().iter().into_quads() {
+		let s = interpretation.terms_of(*q.subject()).next().unwrap();
+		let p = interpretation.terms_of(*q.predicate()).next().unwrap();
+		let o = interpretation.terms_of(*q.object()).next().unwrap();
+		let g = q
+			.graph()
+			.map(|g| interpretation.terms_of(*g).next().unwrap());
+		println!("{} .", rdf_types::Quad(s, p, o, g).with(&vocabulary))
+	}
+
+	if let Err(MissingStatement(Meta(Signed(_sign, statement), _))) = builder.check() {
+		match statement {
+			TripleStatement::Triple(t) => {
+				let interpretation = builder.interpretation().inner_interpretation();
+				let s = interpretation.terms_of(*t.subject()).next().unwrap();
+				let p = interpretation.terms_of(*t.predicate()).next().unwrap();
+				let o = interpretation.terms_of(*t.object()).next().unwrap();
+				eprintln!("missing triple:");
+				eprintln!("{} .", rdf_types::Triple(s, p, o).with(&vocabulary))
+			}
+			TripleStatement::Eq(_, _) => {
+				todo!()
 			}
 		}
 	}
