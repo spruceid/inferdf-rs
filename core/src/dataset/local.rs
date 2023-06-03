@@ -291,12 +291,14 @@ impl<'a> Iterator for Matching<'a> {
 pub struct MatchingQuads<'a>(Matching<'a>);
 
 impl<'a> Iterator for MatchingQuads<'a> {
-	type Item = Quad;
+	type Item = Fact;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.0
 			.next()
-			.map(|(g, _, Meta(Signed(_, triple), _))| triple.into_quad(g))
+			.map(|(g, _, Meta(Signed(sign, triple), meta))| {
+				Meta(Signed(*sign, triple.into_quad(g)), *meta)
+			})
 	}
 }
 

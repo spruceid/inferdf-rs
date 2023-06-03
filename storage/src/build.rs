@@ -6,11 +6,15 @@ use std::{
 
 use iref::Iri;
 use langtag::LanguageTag;
-use rdf_types::{LiteralVocabulary, Vocabulary};
+use rdf_types::{
+	IndexVocabulary, IriVocabulary, LanguageTagVocabulary, LiteralVocabulary, Vocabulary,
+};
 
 use crate::{
 	first_page_offset, graphs_per_page, page, triples_per_page, Encode, Header, Tag, Version,
 };
+
+pub const DEFAULT_PAGE_SIZE: u32 = 4096;
 
 #[derive(Clone, Copy)]
 pub struct Options {
@@ -19,7 +23,9 @@ pub struct Options {
 
 impl Default for Options {
 	fn default() -> Self {
-		Self { page_size: 4096 }
+		Self {
+			page_size: DEFAULT_PAGE_SIZE,
+		}
 	}
 }
 
@@ -40,6 +46,26 @@ pub trait LexicalLiteral: LiteralVocabulary {
 			self.lexical_value(l.value())?,
 			self.lexical_type(l.type_())?,
 		))
+	}
+}
+
+impl LexicalLiteral for IndexVocabulary {
+	fn lexical_value<'a>(&'a self, value: &'a Self::Value) -> Option<&'a [u8]> {
+		Some(value.as_bytes())
+	}
+
+	fn lexical_type<'a>(
+		&'a self,
+		ty: &'a Self::Type,
+	) -> Option<rdf_types::literal::Type<Iri<'a>, LanguageTag<'a>>> {
+		match ty {
+			rdf_types::literal::Type::Any(iri) => {
+				Some(rdf_types::literal::Type::Any(self.iri(iri)?))
+			}
+			rdf_types::literal::Type::LangString(tag) => Some(
+				rdf_types::literal::Type::LangString(self.language_tag(tag)?),
+			),
+		}
 	}
 }
 
@@ -90,7 +116,7 @@ where
 			iri_paths.insert(t, path);
 		},
 	) {
-		page.encode(output)?;
+		page.encode_page(options.page_size, output)?;
 		header.iri_page_count += 1;
 	}
 
@@ -110,7 +136,7 @@ where
 			literal_paths.insert(t, path);
 		},
 	) {
-		page.encode(output)?;
+		page.encode_page(options.page_size, output)?;
 		header.literal_page_count += 1;
 	}
 
@@ -129,7 +155,7 @@ where
 		)
 	});
 	for page in page::resource_terms::Pages::new(options.page_size, resources) {
-		page.encode(output)?;
+		page.encode_page(options.page_size, output)?;
 		header.resource_page_count += 1;
 	}
 
@@ -154,12 +180,13 @@ where
 		first_page_offset + (header.page_size * named_graphs_first_page) as u64,
 	))?;
 	for page in page::graphs::Pages::new(options.page_size, named_graph_entries.into_iter()) {
-		page.encode(output)?
+		page.encode_page(options.page_size, output)?
 	}
 
 	// get to the begining to write the header.
 	output.seek(io::SeekFrom::Start(0))?;
-	header.encode(output)
+	header.encode(output)?;
+	Ok(())
 }
 
 fn build_graph<W: Write + Seek>(
@@ -182,7 +209,7 @@ fn build_graph<W: Write + Seek>(
 		*fact
 	});
 	for page in page::triples::Pages::new(options.page_size, triples) {
-		page.encode(output)?;
+		page.encode_page(options.page_size, output)?;
 	}
 
 	let mut resources: Vec<_> = graph.iter_resources().collect();
@@ -196,7 +223,7 @@ fn build_graph<W: Write + Seek>(
 		)
 	});
 	for page in page::resource_triples::Pages::new(options.page_size, resources) {
-		page.encode(output)?;
+		page.encode_page(options.page_size, output)?;
 		desc.resource_page_count += 1;
 	}
 

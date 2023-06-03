@@ -6,7 +6,7 @@ use std::hash::Hash;
 use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::{self, composite, InterpretationMut},
-	uninterpreted, Cause, Entailment, Fact, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect,
+	uninterpreted, Entailment, Fact, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect,
 };
 
 use crate::semantics::{inference::rule::TripleStatement, Context, MaybeTrusted, Semantics};
@@ -57,7 +57,7 @@ pub struct Builder<V: Vocabulary, D: Module<V>, S> {
 	data: Data<V, D>,
 	semantics: S,
 	entailments: IndexSet<Entailment>,
-	to_check: Vec<Meta<Signed<TripleStatement>, Cause>>,
+	to_check: Vec<Meta<Signed<TripleStatement>, u32>>,
 }
 
 impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
@@ -86,6 +86,17 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 		&self.data.set
 	}
 
+	pub fn entailment(&self, i: u32) -> Option<&Entailment> {
+		self.entailments.get_index(i as usize)
+	}
+
+	pub fn entailments(&self) -> impl Iterator<Item = (u32, &Entailment)> {
+		self.entailments
+			.iter()
+			.enumerate()
+			.map(|(i, e)| (i as u32, e))
+	}
+
 	pub fn check(&mut self) -> Result<(), MissingStatement> {
 		let context = BuilderContext::new(&mut self.interpretation, &self.data);
 		for Meta(Signed(sign, statement), cause) in std::mem::take(&mut self.to_check) {
@@ -96,7 +107,7 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 						.next()
 						.is_none()
 					{
-						return Err(MissingStatement(Meta(Signed(sign, statement), cause)));
+						return Err(MissingStatement(Signed(sign, statement), cause));
 					}
 				}
 				TripleStatement::Eq(_, _) => {
@@ -111,7 +122,7 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 
 #[derive(Debug, thiserror::Error)]
 #[error("missing statement")]
-pub struct MissingStatement(pub Meta<Signed<TripleStatement>, Cause>);
+pub struct MissingStatement(pub Signed<TripleStatement>, pub u32);
 
 impl<'a, V: Vocabulary, D: Module<V>, S: Semantics> InterpretationMut<'a, V> for Builder<V, D, S>
 where
@@ -227,7 +238,10 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 												cause,
 											)),
 										MaybeTrusted::Untrusted(signed_statement) => {
-											self.to_check.push(Meta(signed_statement, cause))
+											self.to_check.push(Meta(
+												signed_statement,
+												cause.into_entailed().unwrap(),
+											))
 										}
 									},
 								)
@@ -273,7 +287,10 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 									MaybeTrusted::Trusted(Signed(sign, statement)) => stack
 										.push(Meta(Signed(sign, statement.with_graph(g)), cause)),
 									MaybeTrusted::Untrusted(signed_statement) => {
-										self.to_check.push(Meta(signed_statement, cause))
+										self.to_check.push(Meta(
+											signed_statement,
+											cause.into_entailed().unwrap(),
+										))
 									}
 								},
 							)

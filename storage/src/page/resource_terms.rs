@@ -76,7 +76,7 @@ pub type LiteralPaths<'a> = std::iter::Copied<std::slice::Iter<'a, LiteralPath>>
 pub type DifferentFrom<'a> = std::iter::Copied<std::slice::Iter<'a, Id>>;
 
 impl Encode for ResourcesTermsPage {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.0.encode(output)
 	}
 }
@@ -88,11 +88,11 @@ impl Decode for ResourcesTermsPage {
 }
 
 impl Encode for Entry {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-		self.id.encode(output)?;
-		self.known_iris.encode(output)?;
-		self.known_literals.encode(output)?;
-		self.different_from.encode(output)
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
+		Ok(self.id.encode(output)?
+			+ self.known_iris.encode(output)?
+			+ self.known_literals.encode(output)?
+			+ self.different_from.encode(output)?)
 	}
 }
 

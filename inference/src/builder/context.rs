@@ -4,7 +4,7 @@ use rdf_types::Vocabulary;
 use inferdf_core::{
 	dataset::{self, Dataset},
 	interpretation::composite::{self, DependencyCanonicalPatterns, Interface},
-	pattern, FailibleIterator, Id, Module, Quad, Sign, Signed,
+	pattern, Fact, FailibleIterator, Id, Module, Sign, Signed,
 };
 
 use crate::semantics;
@@ -27,6 +27,7 @@ impl<'a, V: Vocabulary, D: Module<V>> BuilderContext<'a, V, D> {
 
 impl<'a, V: Vocabulary, D: Module<V>> semantics::Context for BuilderContext<'a, V, D> {
 	type Error = D::Error;
+	type DependencyId = usize;
 	type PatternMatching<'r> = PatternMatching<'r, V, D> where Self: 'r;
 
 	fn pattern_matching(&self, pattern: Signed<pattern::Canonical>) -> Self::PatternMatching<'_> {
@@ -53,15 +54,18 @@ struct DependencyPatternMatching<'a, D: Dataset<'a>> {
 }
 
 impl<'a, D: Dataset<'a>> FailibleIterator for DependencyPatternMatching<'a, D> {
-	type Item = Quad;
+	type Item = Fact;
 	type Error = D::Error;
 
 	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
 		loop {
 			match self.current.as_mut() {
 				Some(current) => match current.next().transpose()? {
-					Some(Meta(Signed(_, quad), _)) => {
-						break Ok(Some(self.interface.quad_from_dependency(quad).unwrap()))
+					Some(Meta(Signed(sign, quad), cause)) => {
+						break Ok(Some(Meta(
+							Signed(sign, self.interface.quad_from_dependency(quad).unwrap()),
+							cause,
+						)))
 					}
 					None => self.current = None,
 				},
@@ -81,7 +85,7 @@ impl<'a, D: Dataset<'a>> FailibleIterator for DependencyPatternMatching<'a, D> {
 }
 
 impl<'a, D: Dataset<'a>> Iterator for DependencyPatternMatching<'a, D> {
-	type Item = Result<Quad, D::Error>;
+	type Item = Result<Fact, D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.try_next().transpose()
@@ -92,35 +96,38 @@ pub struct PatternMatching<'a, V: Vocabulary, D: Module<V>> {
 	interpretation: &'a composite::Interpretation<V>,
 	dataset_iter: dataset::local::MatchingQuads<'a>,
 	dependencies: DependenciesIter<'a, V, D>,
-	current: Option<DependencyPatternMatching<'a, D::Dataset<'a>>>,
+	current: Option<(usize, DependencyPatternMatching<'a, D::Dataset<'a>>)>,
 	pattern: Signed<pattern::Canonical>,
 }
 
 impl<'a, V: Vocabulary, D: Module<V>> FailibleIterator for PatternMatching<'a, V, D> {
-	type Item = Quad;
+	type Item = (Fact, Option<usize>);
 	type Error = D::Error;
 
 	fn try_next(&mut self) -> Result<Option<Self::Item>, D::Error> {
 		match self.dataset_iter.next() {
-			Some(quad) => Ok(Some(quad)),
+			Some(quad) => Ok(Some((quad, None))),
 			None => loop {
 				match self.current.as_mut() {
-					Some(current) => match current.try_next()? {
-						Some(quad) => break Ok(Some(quad)),
+					Some((d, current)) => match current.try_next()? {
+						Some(quad) => break Ok(Some((quad, Some(*d)))),
 						None => self.current = None,
 					},
 					None => match self.dependencies.next() {
 						Some((d, dependency)) => {
 							if let Some(interface) = self.interpretation.interface(d) {
-								self.current = Some(DependencyPatternMatching {
-									dataset: dependency.dataset(),
-									interface,
-									patterns: self
-										.interpretation
-										.dependency_canonical_patterns(d, self.pattern.1),
-									current: None,
-									sign: self.pattern.0,
-								})
+								self.current = Some((
+									d,
+									DependencyPatternMatching {
+										dataset: dependency.dataset(),
+										interface,
+										patterns: self
+											.interpretation
+											.dependency_canonical_patterns(d, self.pattern.1),
+										current: None,
+										sign: self.pattern.0,
+									},
+								))
 							}
 						}
 						None => break Ok(None),
@@ -132,7 +139,7 @@ impl<'a, V: Vocabulary, D: Module<V>> FailibleIterator for PatternMatching<'a, V
 }
 
 impl<'a, V: Vocabulary, D: Module<V>> Iterator for PatternMatching<'a, V, D> {
-	type Item = Result<Quad, D::Error>;
+	type Item = Result<(Fact, Option<usize>), D::Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.try_next().transpose()

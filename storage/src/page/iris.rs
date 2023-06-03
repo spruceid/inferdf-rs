@@ -122,7 +122,7 @@ impl<I: EncodedLen> EncodedLen for Entry<I> {
 }
 
 impl<I: Encode> Encode for IrisPage<I> {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.0.encode(output)
 	}
 }
@@ -137,9 +137,8 @@ impl<V, I: DecodeWith<V>> DecodeWith<V> for IrisPage<I> {
 }
 
 impl<I: Encode> Encode for Entry<I> {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-		self.iri.encode(output)?;
-		self.interpretation.encode(output)
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
+		Ok(self.iri.encode(output)? + self.interpretation.encode(output)?)
 	}
 }
 

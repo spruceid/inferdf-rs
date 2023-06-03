@@ -66,7 +66,7 @@ impl StaticEncodedLen for Entry {
 }
 
 impl Encode for GraphsPage {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.0.encode(output)
 	}
 }
@@ -84,12 +84,13 @@ impl DecodeSized for GraphsPage {
 }
 
 impl Encode for Description {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.triple_count.encode(output)?;
 		self.triple_page_count.encode(output)?;
 		self.resource_count.encode(output)?;
 		self.resource_page_count.encode(output)?;
-		self.first_page.encode(output)
+		self.first_page.encode(output)?;
+		Ok(Self::ENCODED_LEN)
 	}
 }
 
@@ -106,9 +107,10 @@ impl Decode for Description {
 }
 
 impl Encode for Entry {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.id.encode(output)?;
-		self.description.encode(output)
+		self.description.encode(output)?;
+		Ok(Self::ENCODED_LEN)
 	}
 }
 

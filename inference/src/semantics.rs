@@ -1,7 +1,7 @@
 use inferdf_core::{
 	interpretation::{Interpret, InterpretationMut},
 	pattern::{self, Instantiate, PatternSubstitution},
-	Cause, Entailment, Id, Quad, Signed, Triple,
+	Cause, Entailment, Fact, Id, Signed, Triple,
 };
 
 pub mod inference;
@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 
 pub trait Context {
 	type Error;
-	type PatternMatching<'a>: 'a + Iterator<Item = Result<Quad, Self::Error>>
+	type DependencyId;
+	type PatternMatching<'a>: 'a
+		+ Iterator<Item = Result<(Fact, Option<Self::DependencyId>), Self::Error>>
 	where
 		Self: 'a;
 

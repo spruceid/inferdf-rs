@@ -52,7 +52,7 @@ impl Entry {
 }
 
 impl Encode for ResourcesTriplesPage {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.0.encode(output)
 	}
 }
@@ -64,11 +64,11 @@ impl Decode for ResourcesTriplesPage {
 }
 
 impl Encode for Entry {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-		self.id.encode(output)?;
-		self.as_subject.encode(output)?;
-		self.as_predicate.encode(output)?;
-		self.as_object.encode(output)
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
+		Ok(self.id.encode(output)?
+			+ self.as_subject.encode(output)?
+			+ self.as_predicate.encode(output)?
+			+ self.as_object.encode(output)?)
 	}
 }
 

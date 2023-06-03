@@ -61,7 +61,7 @@ impl<L> Entry<L> {
 }
 
 impl<L: Encode> Encode for LiteralsPage<L> {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.0.encode(output)
 	}
 }
@@ -82,9 +82,8 @@ impl<L: EncodedLen> EncodedLen for Entry<L> {
 }
 
 impl<L: Encode> Encode for Entry<L> {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-		self.literal.encode(output)?;
-		self.interpretation.encode(output)
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
+		Ok(self.literal.encode(output)? + self.interpretation.encode(output)?)
 	}
 }
 

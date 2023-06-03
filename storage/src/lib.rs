@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 
 pub use module::Module;
 
-pub use build::{build, Options as BuildOptions};
+pub use build::{build, Options as BuildOptions, DEFAULT_PAGE_SIZE};
 
 /// Header tag value.
 pub const HEADER_TAG: [u8; 4] = [b'B', b'R', b'D', b'F'];

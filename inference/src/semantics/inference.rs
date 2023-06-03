@@ -97,7 +97,7 @@ impl System {
 					Some(
 						context
 							.pattern_matching(pattern.cast())
-							.map(move |m| m.map(|m| (pattern, m))),
+							.map(move |m| m.map(|(Meta(Signed(_, m), _), _)| (pattern, m))),
 					)
 				}
 			})

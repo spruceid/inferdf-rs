@@ -6,6 +6,15 @@ pub enum Cause {
 	Entailed(u32),
 }
 
+impl Cause {
+	pub fn into_entailed(self) -> Option<u32> {
+		match self {
+			Self::Stated(_) => None,
+			Self::Entailed(i) => Some(i),
+		}
+	}
+}
+
 /// Triple entailment.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Entailment {

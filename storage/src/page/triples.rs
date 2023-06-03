@@ -41,7 +41,7 @@ impl TriplesPage {
 pub type Iter<'a> = std::iter::Copied<std::slice::Iter<'a, Meta<Signed<Triple>, Cause>>>;
 
 impl Encode for TriplesPage {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
 		self.0.encode(output)
 	}
 }
@@ -59,10 +59,8 @@ impl DecodeSized for TriplesPage {
 }
 
 impl Encode for Triple {
-	fn encode(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-		self.0.encode(output)?;
-		self.1.encode(output)?;
-		self.2.encode(output)
+	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
+		Ok(self.0.encode(output)? + self.1.encode(output)? + self.2.encode(output)?)
 	}
 }
 

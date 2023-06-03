@@ -18,3 +18,5 @@ locspan = { version = "0.7.13", features = ["reporting"] }
 serde.workspace = true
 stderrlog = "0.5.4"
 ron = "0.8"
+yansi = "0.5.1"
+# codespan-reporting = "0.11.1"
