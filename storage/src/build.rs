@@ -184,7 +184,7 @@ where
 	for (id, graph) in named_graphs {
 		let description = build_graph(graph, output, options, page_count)?;
 		named_graph_entries.push(page::graphs::Entry { id, description });
-		page_count += header.default_graph.page_count();
+		page_count += description.page_count();
 	}
 
 	// get back to write the named graphs descriptions.
