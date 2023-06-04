@@ -12,3 +12,8 @@ thiserror.workspace = true
 langtag.workspace = true
 derivative.workspace = true
 locspan.workspace = true
+
+[dev-dependencies]
+inferdf-inference.workspace = true
+nquads-syntax.workspace = true
+contextual.workspace = true

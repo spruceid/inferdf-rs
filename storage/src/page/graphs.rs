@@ -67,7 +67,13 @@ impl StaticEncodedLen for Entry {
 
 impl Encode for GraphsPage {
 	fn encode(&self, output: &mut impl std::io::Write) -> Result<u32, std::io::Error> {
-		self.0.encode(output)
+		let mut len = 0;
+
+		for t in &self.0 {
+			len += t.encode(output)?
+		}
+
+		Ok(len)
 	}
 }
 

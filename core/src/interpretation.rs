@@ -1,6 +1,6 @@
 use rdf_types::Vocabulary;
 
-use crate::{uninterpreted, Id, IteratorWith};
+use crate::{uninterpreted, Id, IteratorWith, Quad, Triple};
 
 pub mod composite;
 pub mod local;
@@ -8,6 +8,8 @@ pub mod local;
 pub use composite::Interpretation as Composite;
 pub use local::LocalInterpretation;
 
+#[derive(Debug, thiserror::Error)]
+#[error("equality contradiction")]
 pub struct Contradiction(pub Id, pub Id);
 
 pub trait Resource<'a, V: Vocabulary>: Clone {
@@ -113,6 +115,77 @@ pub trait Interpretation<'a, V: Vocabulary>: Clone {
 			Some(r) => Ok(OptionalResourceTerms::Some(r.terms())),
 			None => Ok(OptionalResourceTerms::None),
 		}
+	}
+
+	fn uninterpreted_triples_of(
+		&self,
+		vocabulary: &mut V,
+		triple: Triple,
+	) -> Result<Vec<uninterpreted::Triple<V>>, Self::Error>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::Literal: Copy,
+	{
+		let mut result = Vec::new();
+
+		let mut subjects = self.terms_of(triple.0)?;
+		while let Some(s) = subjects.next_with(vocabulary).transpose()? {
+			let mut predicates = self.terms_of(triple.1)?;
+			while let Some(p) = predicates.next_with(vocabulary).transpose()? {
+				let mut objects = self.terms_of(triple.2)?;
+				while let Some(o) = objects.next_with(vocabulary).transpose()? {
+					result.push(uninterpreted::Triple::<V>::new(s, p, o))
+				}
+			}
+		}
+
+		Ok(result)
+	}
+
+	fn uninterpreted_quads_of(
+		&self,
+		vocabulary: &mut V,
+		quad: Quad,
+	) -> Result<Vec<uninterpreted::Quad<V>>, Self::Error>
+	where
+		V::Iri: Copy,
+		V::BlankId: Copy,
+		V::Literal: Copy,
+	{
+		let mut result = Vec::new();
+
+		match quad.3 {
+			Some(g) => {
+				let mut graphs = self.terms_of(g)?;
+				while let Some(g) = graphs.next_with(vocabulary).transpose()? {
+					let mut subjects = self.terms_of(quad.0)?;
+					while let Some(s) = subjects.next_with(vocabulary).transpose()? {
+						let mut predicates = self.terms_of(quad.1)?;
+						while let Some(p) = predicates.next_with(vocabulary).transpose()? {
+							let mut objects = self.terms_of(quad.2)?;
+							while let Some(o) = objects.next_with(vocabulary).transpose()? {
+								result.push(uninterpreted::Quad::<V>::new(s, p, o, Some(g)))
+							}
+						}
+					}
+				}
+			}
+			None => {
+				let mut subjects = self.terms_of(quad.0)?;
+				while let Some(s) = subjects.next_with(vocabulary).transpose()? {
+					let mut predicates = self.terms_of(quad.1)?;
+					while let Some(p) = predicates.next_with(vocabulary).transpose()? {
+						let mut objects = self.terms_of(quad.2)?;
+						while let Some(o) = objects.next_with(vocabulary).transpose()? {
+							result.push(uninterpreted::Quad::<V>::new(s, p, o, None))
+						}
+					}
+				}
+			}
+		}
+
+		Ok(result)
 	}
 }
 

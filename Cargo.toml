@@ -19,6 +19,7 @@ inferdf-storage = { path = "storage" }
 log = "0.4.17"
 # rdf-types = { version = "0.14.9", features = ["meta", "contextual", "serde"] }
 rdf-types = { git = "https://github.com/timothee-haudebourg/rdf-types.git", rev = "870c0d6", features = ["meta", "contextual", "serde"] }
+nquads-syntax = { git = "https://github.com/timothee-haudebourg/nquads-syntax.git", rev = "b53c5dc" }
 iref = { version = "2.2.3", features = ["hashbrown", "serde"] }
 langtag = "0.3.3"
 derivative = "2.2.0"

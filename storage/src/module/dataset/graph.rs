@@ -63,6 +63,7 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Gra
 		Triples {
 			module: self.module,
 			index: 0,
+			first_page_index: self.desc.first_page,
 			page_index: self.desc.first_page,
 			next_page_index: self.desc.first_page + self.desc.triple_page_count,
 			triple_count: self.desc.triple_count,
@@ -118,6 +119,7 @@ impl<'a> inferdf_core::dataset::graph::Resource<'a> for Resource<'a> {
 pub struct Triples<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
 	index: u32,
+	first_page_index: u32,
 	page_index: u32,
 	next_page_index: u32,
 	triple_count: u32,
@@ -133,7 +135,7 @@ impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Triples<'a, V, R> {
 			let iter = self.page.get_or_try_insert_with::<Error>(|| {
 				let page_triples_count = page::triples::page_triple_count(
 					self.triple_count,
-					self.page_index,
+					self.page_index - self.first_page_index,
 					self.module.sections.triples_per_page,
 				);
 				Ok(cache::Ref::aliasing_map(

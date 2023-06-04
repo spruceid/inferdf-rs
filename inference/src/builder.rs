@@ -17,6 +17,8 @@ mod dependency;
 pub use context::*;
 pub use dependency::*;
 
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
 pub enum Contradiction {
 	Data(dataset::Contradiction),
 	Interpretation(interpretation::Contradiction),
@@ -171,6 +173,8 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 	}
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
 pub enum Error<E> {
 	Contradiction(Contradiction),
 	Dependency(E),

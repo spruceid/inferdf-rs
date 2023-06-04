@@ -97,3 +97,13 @@ impl<T> GetOrTryInsertWith for Option<T> {
 		}
 	}
 }
+
+pub trait DivCeil {
+	fn div_ceil(self, rhs: Self) -> Self;
+}
+
+impl DivCeil for u32 {
+	fn div_ceil(self, rhs: Self) -> Self {
+		(self + rhs - 1) / rhs
+	}
+}

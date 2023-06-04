@@ -1,6 +1,7 @@
 mod build;
 mod decode;
 mod encode;
+mod header;
 mod module;
 mod page;
 
@@ -10,6 +11,7 @@ use encode::StaticEncodedLen;
 
 use std::cmp::Ordering;
 
+pub use header::*;
 pub use module::Module;
 
 pub use build::{build, Options as BuildOptions, DEFAULT_PAGE_SIZE};
@@ -19,40 +21,6 @@ pub const HEADER_TAG: [u8; 4] = [b'B', b'R', b'D', b'F'];
 
 /// Implemented version.
 pub const VERSION: u32 = 0;
-
-pub struct Header {
-	pub tag: Tag,
-	pub version: Version,
-	pub page_size: u32,
-	pub iri_count: u32,
-	pub iri_page_count: u32,
-	pub literal_count: u32,
-	pub literal_page_count: u32,
-	pub resource_count: u32,
-	pub resource_page_count: u32,
-	pub named_graph_count: u32,
-	pub named_graph_page_count: u32,
-	pub default_graph: page::graphs::Description,
-}
-
-impl StaticEncodedLen for Header {
-	const ENCODED_LEN: u32 =
-		Tag::ENCODED_LEN + Version::ENCODED_LEN + 4 * 9 + page::graphs::Description::ENCODED_LEN;
-}
-
-/// Header tag, used to recognize the file format.
-pub struct Tag;
-
-impl StaticEncodedLen for Tag {
-	const ENCODED_LEN: u32 = 4;
-}
-
-/// Version number.
-pub struct Version;
-
-impl StaticEncodedLen for Version {
-	const ENCODED_LEN: u32 = 4;
-}
 
 pub struct Sections {
 	pub first_page_offset: u64,

@@ -1,6 +1,6 @@
 use locspan::Meta;
 
-use crate::{pattern, Fact, FailibleIterator, Id, Sign, Signed, Triple};
+use crate::{pattern, Fact, FailibleIterator, GraphFact, Id, Sign, Signed, Triple};
 
 pub mod graph;
 pub mod local;
@@ -8,6 +8,8 @@ pub mod local;
 pub use graph::Graph;
 pub use local::LocalDataset;
 
+#[derive(Debug, thiserror::Error)]
+#[error("statement contradiction")]
 pub struct Contradiction(pub Triple);
 
 /// RDF dataset.
@@ -66,6 +68,13 @@ pub trait Dataset<'a>: Clone {
 
 	fn unsigned_pattern_matching(&self, pattern: pattern::Canonical) -> Matching<'a, Self> {
 		self.full_pattern_matching(pattern, None)
+	}
+
+	fn iter(&self) -> Iter<'a, Self> {
+		Iter {
+			graphs: self.graphs(),
+			current: None,
+		}
 	}
 }
 
@@ -215,5 +224,51 @@ impl<'a, D: Dataset<'a>> Iterator for MatchingQuads<'a, D> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.try_next().transpose()
+	}
+}
+
+pub struct Iter<'a, D: Dataset<'a>> {
+	graphs: D::Graphs,
+	current: Option<(Option<Id>, <D::Graph as Graph<'a>>::Triples)>,
+}
+
+impl<'a, D: Dataset<'a>> Iter<'a, D> {
+	pub fn into_quads(self) -> Quads<'a, D> {
+		Quads(self)
+	}
+}
+
+impl<'a, D: Dataset<'a>> Iterator for Iter<'a, D> {
+	type Item = Result<(Option<Id>, u32, GraphFact), D::Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match self.current.as_mut() {
+				Some((g, m)) => match m.next() {
+					Some(Err(e)) => break Some(Err(e)),
+					Some(Ok((i, triple))) => break Some(Ok((*g, i, triple))),
+					None => self.current = None,
+				},
+				None => match self.graphs.next() {
+					Some(Err(e)) => break Some(Err(e)),
+					Some(Ok((g, graph))) => self.current = Some((g, graph.triples())),
+					None => break None,
+				},
+			}
+		}
+	}
+}
+
+pub struct Quads<'a, D: Dataset<'a>>(Iter<'a, D>);
+
+impl<'a, D: Dataset<'a>> Iterator for Quads<'a, D> {
+	type Item = Result<Fact, D::Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(|f| {
+			f.map(|(g, _, Meta(Signed(sign, triple), cause))| {
+				Meta(Signed(sign, triple.into_quad(g)), cause)
+			})
+		})
 	}
 }

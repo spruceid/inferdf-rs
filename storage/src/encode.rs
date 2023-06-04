@@ -6,10 +6,7 @@ use langtag::LanguageTag;
 use locspan::Meta;
 use rdf_types::{literal, Literal};
 
-use crate::{
-	module::{IriPath, LiteralPath},
-	Header, Tag, Version, HEADER_TAG, VERSION,
-};
+use crate::module::{IriPath, LiteralPath};
 
 pub trait StaticEncodedLen {
 	const ENCODED_LEN: u32;
@@ -73,6 +70,21 @@ impl StaticEncodedLen for Id {
 	const ENCODED_LEN: u32 = 4;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum PageError {
+	#[error(transparent)]
+	IO(io::Error),
+
+	#[error("page overflowed by {0} bytes")]
+	Overflow(u32),
+}
+
+impl From<io::Error> for PageError {
+	fn from(value: io::Error) -> Self {
+		Self::IO(value)
+	}
+}
+
 pub trait Encode {
 	fn encode(&self, output: &mut impl Write) -> Result<u32, io::Error>;
 
@@ -80,42 +92,14 @@ pub trait Encode {
 		&self,
 		page_len: u32,
 		output: &mut (impl Write + Seek),
-	) -> Result<(), io::Error> {
+	) -> Result<(), PageError> {
 		let len = self.encode(output)?;
-		output.seek(io::SeekFrom::Current((page_len - len) as i64))?;
-		Ok(())
-	}
-}
-
-impl Encode for Header {
-	fn encode(&self, output: &mut impl Write) -> Result<u32, io::Error> {
-		self.tag.encode(output)?;
-		self.version.encode(output)?;
-		self.page_size.encode(output)?;
-		self.resource_count.encode(output)?;
-		self.resource_page_count.encode(output)?;
-		self.iri_count.encode(output)?;
-		self.iri_page_count.encode(output)?;
-		self.literal_count.encode(output)?;
-		self.literal_page_count.encode(output)?;
-		self.named_graph_count.encode(output)?;
-		self.named_graph_page_count.encode(output)?;
-		self.default_graph.encode(output)?;
-		Ok(Self::ENCODED_LEN)
-	}
-}
-
-impl Encode for Tag {
-	fn encode(&self, output: &mut impl Write) -> Result<u32, io::Error> {
-		output.write_all(&HEADER_TAG)?;
-		Ok(Self::ENCODED_LEN)
-	}
-}
-
-impl Encode for Version {
-	fn encode(&self, output: &mut impl Write) -> Result<u32, io::Error> {
-		VERSION.encode(output)?;
-		Ok(Self::ENCODED_LEN)
+		if len > page_len {
+			Err(PageError::Overflow(page_len - len))
+		} else {
+			output.seek(io::SeekFrom::Current((page_len - len) as i64))?;
+			Ok(())
+		}
 	}
 }
 

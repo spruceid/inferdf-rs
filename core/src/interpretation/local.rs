@@ -105,7 +105,7 @@ impl<V: Vocabulary> LocalInterpretation<V> {
 		}
 	}
 
-	pub fn global_triple_of(&self, triple: Triple) -> Vec<uninterpreted::Triple<V>>
+	pub fn uninterpreted_triples_of(&self, triple: Triple) -> Vec<uninterpreted::Triple<V>>
 	where
 		V::Iri: Copy,
 		V::BlankId: Copy,

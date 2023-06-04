@@ -10,10 +10,7 @@ use rdf_types::{
 	IriVocabularyMut, LanguageTagVocabularyMut, Literal, LiteralVocabularyMut,
 };
 
-use crate::{
-	module::{IriPath, LiteralPath},
-	page, Header, Tag, Version, HEADER_TAG, VERSION,
-};
+use crate::module::{IriPath, LiteralPath};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -55,48 +52,6 @@ pub trait Decode: Sized {
 
 pub trait DecodeWith<V>: Sized {
 	fn decode_with(vocabulary: &mut V, input: &mut impl Read) -> Result<Self, Error>;
-}
-
-impl Decode for Header {
-	fn decode(input: &mut impl Read) -> Result<Self, Error> {
-		Ok(Self {
-			tag: Tag::decode(input)?,
-			version: Version::decode(input)?,
-			page_size: u32::decode(input)?,
-			resource_count: u32::decode(input)?,
-			resource_page_count: u32::decode(input)?,
-			iri_count: u32::decode(input)?,
-			iri_page_count: u32::decode(input)?,
-			literal_count: u32::decode(input)?,
-			literal_page_count: u32::decode(input)?,
-			named_graph_count: u32::decode(input)?,
-			named_graph_page_count: u32::decode(input)?,
-			default_graph: page::graphs::Description::decode(input)?,
-		})
-	}
-}
-
-impl Decode for Tag {
-	fn decode(input: &mut impl Read) -> Result<Self, Error> {
-		let mut buf = [0u8; 4];
-		input.read_exact(&mut buf)?;
-		if buf == HEADER_TAG {
-			Ok(Self)
-		} else {
-			Err(Error::InvalidTag)
-		}
-	}
-}
-
-impl Decode for Version {
-	fn decode(input: &mut impl Read) -> Result<Self, Error> {
-		let v = u32::decode(input)?;
-		if v == VERSION {
-			Ok(Self)
-		} else {
-			Err(Error::UnsupportedVersion(v))
-		}
-	}
 }
 
 impl Decode for u8 {

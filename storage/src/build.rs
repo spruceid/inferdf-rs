@@ -4,6 +4,7 @@ use std::{
 	io::{self, BufWriter, Seek, Write},
 };
 
+use inferdf_core::DivCeil;
 use iref::Iri;
 use langtag::LanguageTag;
 use rdf_types::{
@@ -11,7 +12,8 @@ use rdf_types::{
 };
 
 use crate::{
-	first_page_offset, graphs_per_page, page, triples_per_page, Encode, Header, Tag, Version,
+	encode::PageError, first_page_offset, graphs_per_page, page, triples_per_page, Encode, Header,
+	Tag, Version,
 };
 
 pub const DEFAULT_PAGE_SIZE: u32 = 4096;
@@ -75,7 +77,7 @@ pub fn build<V: Vocabulary, W: Write + Seek>(
 	dataset: &inferdf_core::dataset::LocalDataset,
 	output: &mut BufWriter<W>,
 	options: Options,
-) -> Result<(), io::Error>
+) -> Result<(), PageError>
 where
 	V::Iri: Eq + Hash,
 	V::Literal: Eq + Hash,
@@ -94,9 +96,14 @@ where
 		resource_count: interpretation.len(),
 		resource_page_count: 0,
 		named_graph_count: dataset.named_graph_count() as u32,
-		named_graph_page_count: dataset.named_graph_count() as u32 / graphs_per_page,
+		named_graph_page_count: DivCeil::div_ceil(
+			dataset.named_graph_count() as u32,
+			graphs_per_page,
+		),
 		default_graph: page::graphs::Description::default(),
 	};
+
+	eprintln!("{} resources", header.resource_count);
 
 	let first_page_offset = first_page_offset(options.page_size);
 	output.seek(std::io::SeekFrom::Start(first_page_offset))?;
@@ -194,10 +201,13 @@ fn build_graph<W: Write + Seek>(
 	output: &mut BufWriter<W>,
 	options: Options,
 	page_index: u32,
-) -> Result<page::graphs::Description, io::Error> {
+) -> Result<page::graphs::Description, PageError> {
 	let mut desc = page::graphs::Description {
 		triple_count: graph.len() as u32,
-		triple_page_count: graph.len() as u32 / triples_per_page(options.page_size),
+		triple_page_count: DivCeil::div_ceil(
+			graph.len() as u32,
+			triples_per_page(options.page_size),
+		),
 		resource_count: graph.resource_count() as u32,
 		resource_page_count: 0,
 		first_page: page_index,

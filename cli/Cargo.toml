@@ -10,8 +10,7 @@ inferdf-inference.workspace = true
 inferdf-storage.workspace = true
 clap = { version = "4.0", features = ["derive"] }
 rdf-types.workspace = true
-# nquads-syntax = "0.12.0"
-nquads-syntax = { git = "https://github.com/timothee-haudebourg/nquads-syntax.git", rev = "b53c5dc" }
+nquads-syntax.workspace = true
 contextual.workspace = true
 static-iref = "2.0.0"
 locspan = { version = "0.7.13", features = ["reporting"] }
@@ -19,4 +18,3 @@ serde.workspace = true
 stderrlog = "0.5.4"
 ron = "0.8"
 yansi = "0.5.1"
-# codespan-reporting = "0.11.1"
