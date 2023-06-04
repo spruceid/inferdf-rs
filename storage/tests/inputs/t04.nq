@@ -1,0 +1,2 @@
+<http://example.com/alice> <http://xmlns.com/foaf/0.1/knows> <http://example.com/bob> <http://example.org/graphs/john> .
+<http://example.com/bob> <http://xmlns.com/foaf/0.1/knows> <http://example.com/alice> <http://example.org/graphs/james> .

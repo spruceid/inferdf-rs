@@ -123,3 +123,18 @@ fn test(input: &str) {
 fn t01() {
 	test("tests/inputs/t01.nq")
 }
+
+#[test]
+fn t02() {
+	test("tests/inputs/t02.nq")
+}
+
+#[test]
+fn t03() {
+	test("tests/inputs/t03.nq")
+}
+
+#[test]
+fn t04() {
+	test("tests/inputs/t04.nq")
+}

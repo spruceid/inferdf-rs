@@ -13,9 +13,14 @@ pub const FACT_LEN: u32 = SIGN_LEN + TRIPLE_LEN + CAUSE_LEN;
 
 pub struct TriplesPage(Vec<Meta<Signed<Triple>, Cause>>);
 
-pub fn page_triple_count(triple_count: u32, page_index: u32, triples_per_page: u32) -> u32 {
+pub fn page_triple_count(
+	triple_count: u32,
+	first_page_index: u32,
+	page_index: u32,
+	triples_per_page: u32,
+) -> u32 {
 	std::cmp::min(
-		triple_count - page_index * triples_per_page,
+		triple_count - (page_index - first_page_index) * triples_per_page,
 		triples_per_page,
 	)
 }

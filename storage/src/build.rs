@@ -103,8 +103,6 @@ where
 		default_graph: page::graphs::Description::default(),
 	};
 
-	eprintln!("{} resources", header.resource_count);
-
 	let first_page_offset = first_page_offset(options.page_size);
 	output.seek(std::io::SeekFrom::Start(first_page_offset))?;
 
@@ -170,9 +168,16 @@ where
 		header.iri_page_count + header.literal_page_count + header.resource_page_count;
 	let mut page_count = named_graphs_first_page + header.named_graph_page_count;
 
+	// skip named graph descriptions pages for now.
+	output.seek(io::SeekFrom::Current(
+		(header.named_graph_page_count * header.page_size) as i64,
+	))?;
+
+	// write default graph.
 	header.default_graph = build_graph(dataset.default_graph(), output, options, page_count)?;
 	page_count += header.default_graph.page_count();
 
+	// write named graphs.
 	let mut named_graph_entries = Vec::new();
 	let mut named_graphs: Vec<_> = dataset.named_graphs().collect();
 	named_graphs.sort_unstable_by_key(|(id, _)| *id);

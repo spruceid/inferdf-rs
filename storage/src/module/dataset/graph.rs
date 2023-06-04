@@ -46,6 +46,7 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Gra
 			page::TriplesPage::triple_page_index(self.module.sections.triples_per_page, i);
 		let page_triples_count = page::triples::page_triple_count(
 			self.desc.triple_count,
+			self.desc.first_page,
 			p,
 			self.module.sections.triples_per_page,
 		);
@@ -135,7 +136,8 @@ impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Triples<'a, V, R> {
 			let iter = self.page.get_or_try_insert_with::<Error>(|| {
 				let page_triples_count = page::triples::page_triple_count(
 					self.triple_count,
-					self.page_index - self.first_page_index,
+					self.first_page_index,
+					self.page_index,
 					self.module.sections.triples_per_page,
 				);
 				Ok(cache::Ref::aliasing_map(

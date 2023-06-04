@@ -37,6 +37,7 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::Dataset<'a> for Dataset<'a
 				|p| {
 					let page_graph_count = page_graph_count(
 						self.module.header.named_graph_count,
+						self.module.sections.graphs,
 						p,
 						self.module.sections.graphs_per_page,
 					);
@@ -74,8 +75,16 @@ pub struct Graphs<'a, V: Vocabulary, R> {
 	current: Option<cache::Aliasing<'a, page::graphs::Iter<'a>>>,
 }
 
-fn page_graph_count(graph_count: u32, page_index: u32, graphs_per_page: u32) -> u32 {
-	std::cmp::min(graph_count - page_index * graphs_per_page, graphs_per_page)
+fn page_graph_count(
+	graph_count: u32,
+	first_page_index: u32,
+	page_index: u32,
+	graphs_per_page: u32,
+) -> u32 {
+	std::cmp::min(
+		graph_count - (page_index - first_page_index) * graphs_per_page,
+		graphs_per_page,
+	)
 }
 
 impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Graphs<'a, V, R> {
@@ -94,6 +103,7 @@ impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Graphs<'a, V, R> {
 					let iter = self.current.get_or_try_insert_with::<Error>(|| {
 						let page_graph_count = page_graph_count(
 							self.module.header.named_graph_count,
+							self.module.sections.graphs,
 							self.page_index,
 							self.module.sections.graphs_per_page,
 						);
