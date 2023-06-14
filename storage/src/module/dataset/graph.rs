@@ -30,6 +30,7 @@ impl<'a, V: Vocabulary, R: Read> Graph<'a, V, R> {
 impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Graph<'a, V, R> {
 	type Error = Error;
 	type Resource = Resource<'a>;
+	type Resources = Resources<'a, V, R>;
 	type Triples = Triples<'a, V, R>;
 
 	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Error> {
@@ -39,6 +40,17 @@ impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Gra
 			self.desc.first_page + self.desc.triple_page_count,
 			self.desc.resource_page_count,
 		)
+	}
+
+	fn resources(&self) -> Self::Resources {
+		Resources {
+			module: self.module,
+			page_index: self.desc.first_page + self.desc.triple_page_count,
+			next_page_index: self.desc.first_page
+				+ self.desc.triple_page_count
+				+ self.desc.resource_page_count,
+			page: None,
+		}
 	}
 
 	fn get_triple(&self, i: u32) -> Result<Option<Meta<Signed<Triple>, Cause>>, Error> {
@@ -117,6 +129,50 @@ impl<'a> inferdf_core::dataset::graph::Resource<'a> for Resource<'a> {
 	}
 }
 
+pub struct Resources<'a, V: Vocabulary, R> {
+	module: &'a Module<V, R>,
+	page_index: u32,
+	next_page_index: u32,
+	page: Option<cache::Aliasing<'a, page::resource_triples::Iter<'a>>>,
+}
+
+impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Resources<'a, V, R> {
+	type Item = (Id, Resource<'a>);
+	type Error = Error;
+
+	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
+		while self.page_index < self.next_page_index {
+			let iter = self.page.get_or_try_insert_with::<Error>(|| {
+				Ok(cache::Ref::aliasing_map(
+					self.module.get_resource_triples_page(self.page_index)?,
+					|p| p.iter(),
+				))
+			})?;
+
+			match iter.next() {
+				Some(entry) => {
+					let entry = entry.into_ref();
+					return Ok(Some((entry.id, Resource { entry })));
+				}
+				None => {
+					self.page = None;
+					self.page_index += 1
+				}
+			}
+		}
+
+		Ok(None)
+	}
+}
+
+impl<'a, V: Vocabulary, R: Read + Seek> Iterator for Resources<'a, V, R> {
+	type Item = Result<(Id, Resource<'a>), Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.try_next().transpose()
+	}
+}
+
 pub struct Triples<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
 	index: u32,
@@ -124,7 +180,7 @@ pub struct Triples<'a, V: Vocabulary, R> {
 	page_index: u32,
 	next_page_index: u32,
 	triple_count: u32,
-	page: Option<cache::Aliasing<'a, page::triples::Iter<'a>>>,
+	page: Option<cache::IntoIterEscape<'a, page::triples::Iter<'a>>>,
 }
 
 impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Triples<'a, V, R> {
@@ -144,7 +200,8 @@ impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Triples<'a, V, R> {
 					self.module
 						.get_triples_page(self.page_index, page_triples_count)?,
 					|p| p.iter(),
-				))
+				)
+				.into_iter_escape())
 			})?;
 
 			match iter.next() {

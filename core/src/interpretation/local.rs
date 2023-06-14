@@ -85,6 +85,10 @@ impl<V: Vocabulary> Resource<V> {
 			different_from: HashSet::new(),
 		}
 	}
+
+	pub fn is_anonymous(&self) -> bool {
+		self.as_iri.is_empty() && self.as_literal.is_empty()
+	}
 }
 
 pub type ResourceLiteralInstances<V> = HashMap<<V as LiteralVocabulary>::Literal, Id>;

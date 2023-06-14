@@ -1,4 +1,5 @@
 pub mod cause;
+pub mod class;
 pub mod dataset;
 pub mod interpretation;
 pub mod pattern;

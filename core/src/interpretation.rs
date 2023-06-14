@@ -37,7 +37,6 @@ pub trait Resource<'a, V: Vocabulary>: Clone {
 
 pub struct ResourceTerms<'a, V: Vocabulary, R: Resource<'a, V>> {
 	as_iri: R::Iris,
-	// as_blank: R::Blanks,
 	as_literal: R::Literals,
 }
 

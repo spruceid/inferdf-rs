@@ -133,6 +133,12 @@ impl From<Triple> for Canonical {
 	}
 }
 
+impl From<rdf_types::Triple<Option<Id>, Option<Id>, Option<Id>>> for Canonical {
+	fn from(value: rdf_types::Triple<Option<Id>, Option<Id>, Option<Id>>) -> Self {
+		Self::from_option_triple(value)
+	}
+}
+
 impl From<Pattern> for Canonical {
 	fn from(value: Pattern) -> Self {
 		Self::from_pattern(value)
@@ -172,6 +178,15 @@ impl Canonical {
 				GivenSubjectGivenPredicate::GivenObject(triple.2),
 			),
 		)
+	}
+
+	pub fn from_option_triple(
+		triple: rdf_types::Triple<Option<Id>, Option<Id>, Option<Id>>,
+	) -> Self {
+		match triple.0 {
+			Some(s) => Self::GivenSubject(s, GivenSubject::from_option_triple(triple.1, triple.2)),
+			None => Self::AnySubject(AnySubject::from_option_triple(triple.1, triple.2)),
+		}
 	}
 
 	pub fn from_pattern(pattern: Pattern) -> Self {
@@ -301,6 +316,13 @@ pub enum AnySubject {
 }
 
 impl AnySubject {
+	pub fn from_option_triple(p: Option<Id>, o: Option<Id>) -> Self {
+		match p {
+			Some(p) => Self::GivenPredicate(p, AnySubjectGivenPredicate::from_option(o)),
+			None => Self::AnyPredicate(AnySubjectAnyPredicate::from_option(o)),
+		}
+	}
+
 	pub fn from_pattern(s: usize, p: IdOrVar, o: IdOrVar) -> Self {
 		match p {
 			IdOrVar::Id(p) => Self::GivenPredicate(p, AnySubjectGivenPredicate::from_pattern(s, o)),
@@ -340,6 +362,13 @@ pub enum AnySubjectAnyPredicate {
 }
 
 impl AnySubjectAnyPredicate {
+	pub fn from_option(o: Option<Id>) -> Self {
+		match o {
+			Some(o) => Self::GivenObject(o),
+			None => Self::AnyObject,
+		}
+	}
+
 	pub fn from_pattern(s: usize, p: usize, o: IdOrVar) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),
@@ -373,6 +402,13 @@ pub enum AnySubjectGivenPredicate {
 }
 
 impl AnySubjectGivenPredicate {
+	pub fn from_option(o: Option<Id>) -> Self {
+		match o {
+			Some(o) => Self::GivenObject(o),
+			None => Self::AnyObject,
+		}
+	}
+
 	pub fn from_pattern(s: usize, o: IdOrVar) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),
@@ -402,6 +438,13 @@ pub enum GivenSubject {
 }
 
 impl GivenSubject {
+	pub fn from_option_triple(p: Option<Id>, o: Option<Id>) -> Self {
+		match p {
+			Some(p) => Self::GivenPredicate(p, GivenSubjectGivenPredicate::from_option(o)),
+			None => Self::AnyPredicate(GivenSubjectAnyPredicate::from_option(o)),
+		}
+	}
+
 	pub fn from_pattern(p: IdOrVar, o: IdOrVar) -> Self {
 		match p {
 			IdOrVar::Id(p) => Self::GivenPredicate(p, GivenSubjectGivenPredicate::from_pattern(o)),
@@ -432,6 +475,13 @@ pub enum GivenSubjectAnyPredicate {
 }
 
 impl GivenSubjectAnyPredicate {
+	pub fn from_option(o: Option<Id>) -> Self {
+		match o {
+			Some(o) => Self::GivenObject(o),
+			None => Self::AnyObject,
+		}
+	}
+
 	pub fn from_pattern(p: usize, o: IdOrVar) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),
@@ -461,6 +511,13 @@ pub enum GivenSubjectGivenPredicate {
 }
 
 impl GivenSubjectGivenPredicate {
+	pub fn from_option(o: Option<Id>) -> Self {
+		match o {
+			Some(o) => Self::GivenObject(o),
+			None => Self::AnyObject,
+		}
+	}
+
 	pub fn from_pattern(o: IdOrVar) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),

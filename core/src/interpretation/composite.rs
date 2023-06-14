@@ -46,7 +46,7 @@ impl<V: Vocabulary> Interpretation<V> {
 		Self::default()
 	}
 
-	pub fn inner_interpretation(&self) -> &local::LocalInterpretation<V> {
+	pub fn local_interpretation(&self) -> &local::LocalInterpretation<V> {
 		&self.interpretation
 	}
 

@@ -85,6 +85,10 @@ impl Graph {
 		self.facts.get(i)
 	}
 
+	pub fn get_resource(&self, id: Id) -> Option<&Resource> {
+		self.resources.get(&id)
+	}
+
 	pub fn iter(&self) -> slab::Iter<Fact> {
 		self.facts.iter()
 	}

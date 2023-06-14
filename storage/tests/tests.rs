@@ -66,7 +66,7 @@ fn build_module(
 		let mut output = BufWriter::new(&mut cursor);
 		inferdf_storage::build(
 			&*vocabulary,
-			builder.interpretation().inner_interpretation(),
+			builder.interpretation().local_interpretation(),
 			builder.dataset(),
 			&mut output,
 			inferdf_storage::BuildOptions { page_size: 512 },

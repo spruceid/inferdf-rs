@@ -103,14 +103,16 @@ where
 	fn as_iri(&self) -> Self::Iris {
 		Iris {
 			module: self.module,
-			iter: cache::Ref::aliasing_map(self.entry.clone(), |e| e.iter_known_iris()),
+			iter: cache::Ref::aliasing_map(self.entry.clone(), |e| e.iter_known_iris())
+				.into_iter_escape(),
 		}
 	}
 
 	fn as_literal(&self) -> Self::Literals {
 		Literals {
 			module: self.module,
-			iter: cache::Ref::aliasing_map(self.entry.clone(), |e| e.iter_known_literals()),
+			iter: cache::Ref::aliasing_map(self.entry.clone(), |e| e.iter_known_literals())
+				.into_iter_escape(),
 		}
 	}
 
@@ -123,7 +125,7 @@ where
 
 pub struct Iris<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
-	iter: cache::Aliasing<'a, page::resource_terms::IriPaths<'a>>,
+	iter: cache::IntoIterEscape<'a, page::resource_terms::IriPaths<'a>>,
 }
 
 impl<'a, V: Vocabulary, R: Read + Seek> IteratorWith<V> for Iris<'a, V, R>
@@ -142,7 +144,7 @@ where
 
 pub struct Literals<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
-	iter: cache::Aliasing<'a, page::resource_terms::LiteralPaths<'a>>,
+	iter: cache::IntoIterEscape<'a, page::resource_terms::LiteralPaths<'a>>,
 }
 
 impl<'a, V: Vocabulary, R: Read + Seek> IteratorWith<V> for Literals<'a, V, R>

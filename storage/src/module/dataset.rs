@@ -72,7 +72,7 @@ pub struct Graphs<'a, V: Vocabulary, R> {
 	default_graph: Option<page::graphs::Description>,
 	page_index: u32,
 	next_page_index: u32,
-	current: Option<cache::Aliasing<'a, page::graphs::Iter<'a>>>,
+	current: Option<cache::IntoIterEscape<'a, page::graphs::Iter<'a>>>,
 }
 
 fn page_graph_count(
@@ -111,7 +111,8 @@ impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Graphs<'a, V, R> {
 							self.module
 								.get_graph_page(self.page_index, page_graph_count)?,
 							|p| p.iter(),
-						))
+						)
+						.into_iter_escape())
 					})?;
 
 					match iter.next() {

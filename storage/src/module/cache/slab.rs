@@ -2,7 +2,7 @@ use core::fmt;
 use std::{
 	cell::{Cell, RefCell},
 	hash::{Hash, Hasher},
-	ops::{Deref, DerefMut},
+	ops::Deref,
 };
 
 use super::{Busy, NotEnoughMemory, DEFAULT_CHUNK_LEN};
@@ -558,14 +558,14 @@ pub struct Aliasing<'a, T> {
 }
 
 impl<'a, T> Aliasing<'a, T> {
-	// fn into_parts(r: Self) -> (T, &'a Cell<BorrowState>) {
-	// 	unsafe {
-	// 		let value = std::ptr::read(&r.value);
-	// 		let borrow = std::ptr::read(&r.borrow);
-	// 		std::mem::forget(r);
-	// 		(value, borrow)
-	// 	}
-	// }
+	fn into_parts(r: Self) -> (T, &'a Cell<BorrowState>) {
+		unsafe {
+			let value = std::ptr::read(&r.value);
+			let borrow = std::ptr::read(&r.borrow);
+			std::mem::forget(r);
+			(value, borrow)
+		}
+	}
 
 	// pub fn map<U>(r: Self, f: impl FnOnce(T) -> U) -> Aliasing<'a, U> {
 	// 	let (value, borrow) = Self::into_parts(r);
@@ -575,24 +575,52 @@ impl<'a, T> Aliasing<'a, T> {
 	// 	}
 	// }
 
-	pub fn into_iter_escape(r: Self) -> IntoIterEscape<'a, T> {
-		IntoIterEscape(r)
+	pub fn into_iter_escape(self) -> IntoIterEscape<'a, T> {
+		IntoIterEscape(self)
+	}
+
+	// pub fn escape(self) -> T where T: 'static {
+	// 	self.borrow.set(self.borrow.get().remove_reader());
+	// 	let value = unsafe { std::ptr::read(&self.value) };
+	// 	std::mem::forget(self);
+	// 	value
+	// }
+}
+
+impl<'a, T> Aliasing<'a, &'a T> {
+	pub fn into_ref(self) -> Ref<'a, T> {
+		let (value, borrow) = Self::into_parts(self);
+		Ref { value, borrow }
 	}
 }
 
-impl<'a, T> Deref for Aliasing<'a, T> {
-	type Target = T;
+impl<'a, T: Iterator> Iterator for Aliasing<'a, T> {
+	type Item = Aliasing<'a, T::Item>;
 
-	fn deref(&self) -> &Self::Target {
-		&self.value
+	fn next(&mut self) -> Option<Self::Item> {
+		self.value.next().map(|value| {
+			self.borrow.set(self.borrow.get().add_reader().unwrap());
+			Aliasing {
+				borrow: self.borrow,
+				value,
+			}
+		})
 	}
 }
 
-impl<'a, T> DerefMut for Aliasing<'a, T> {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.value
-	}
-}
+// impl<'a, T> Deref for Aliasing<'a, T> {
+// 	type Target = T;
+
+// 	fn deref(&self) -> &Self::Target {
+// 		&self.value
+// 	}
+// }
+
+// impl<'a, T> DerefMut for Aliasing<'a, T> {
+// 	fn deref_mut(&mut self) -> &mut Self::Target {
+// 		&mut self.value
+// 	}
+// }
 
 impl<'a, T: Clone> Clone for Aliasing<'a, T> {
 	fn clone(&self) -> Self {
@@ -657,6 +685,6 @@ where
 	type Item = T::Item;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next()
+		self.0.value.next()
 	}
 }

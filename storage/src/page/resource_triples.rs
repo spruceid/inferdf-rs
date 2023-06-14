@@ -31,7 +31,13 @@ impl ResourcesTriplesPage {
 			}
 		}
 	}
+
+	pub fn iter(&self) -> Iter {
+		self.0.iter()
+	}
 }
+
+pub type Iter<'a> = std::slice::Iter<'a, Entry>;
 
 pub struct Entry {
 	pub id: Id,

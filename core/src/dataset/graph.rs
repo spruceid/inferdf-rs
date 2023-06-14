@@ -18,9 +18,13 @@ pub trait Graph<'a>: Clone {
 	type Error;
 	type Resource: Resource<'a>;
 
+	type Resources: Iterator<Item = Result<(Id, Self::Resource), Self::Error>>;
+
 	type Triples: Iterator<Item = Result<(u32, GraphFact), Self::Error>>;
 
 	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error>;
+
+	fn resources(&self) -> Self::Resources;
 
 	fn get_triple(&self, index: u32) -> Result<Option<GraphFact>, Self::Error>;
 

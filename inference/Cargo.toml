@@ -16,3 +16,4 @@ contextual.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 indexmap = "1.9.3"
+normal-form = "0.1.1"

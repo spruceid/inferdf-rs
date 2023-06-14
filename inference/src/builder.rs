@@ -11,6 +11,7 @@ use inferdf_core::{
 
 use crate::semantics::{inference::rule::TripleStatement, Context, MaybeTrusted, Semantics};
 
+mod class;
 mod context;
 mod dependency;
 
@@ -80,8 +81,16 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 		}
 	}
 
+	pub fn dependencies(&self) -> &Dependencies<V, D> {
+		&self.data.dependencies
+	}
+
 	pub fn interpretation(&self) -> &composite::Interpretation<V> {
 		&self.interpretation
+	}
+
+	pub fn local_interpretation(&self) -> &interpretation::LocalInterpretation<V> {
+		self.interpretation.local_interpretation()
 	}
 
 	pub fn dataset(&self) -> &dataset::LocalDataset {

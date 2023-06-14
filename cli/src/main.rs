@@ -104,7 +104,7 @@ fn main() -> ExitCode {
 		}
 	}
 
-	let interpretation = builder.interpretation().inner_interpretation();
+	let interpretation = builder.interpretation().local_interpretation();
 	for q in builder.dataset().iter().into_quads() {
 		let s = interpretation.terms_of(*q.subject()).next().unwrap();
 		let p = interpretation.terms_of(*q.predicate()).next().unwrap();
@@ -118,7 +118,7 @@ fn main() -> ExitCode {
 	if let Err(MissingStatement(Signed(_sign, statement), e)) = builder.check() {
 		match statement {
 			TripleStatement::Triple(t) => {
-				let interpretation = builder.interpretation().inner_interpretation();
+				let interpretation = builder.interpretation().local_interpretation();
 				let s = interpretation.terms_of(*t.subject()).next().unwrap();
 				let p = interpretation.terms_of(*t.predicate()).next().unwrap();
 				let o = interpretation.terms_of(*t.object()).next().unwrap();
@@ -151,7 +151,7 @@ fn main() -> ExitCode {
 
 	inferdf_storage::build(
 		&vocabulary,
-		builder.interpretation().inner_interpretation(),
+		builder.interpretation().local_interpretation(),
 		builder.dataset(),
 		&mut output,
 		inferdf_storage::BuildOptions {
