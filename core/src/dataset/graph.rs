@@ -5,13 +5,15 @@ use locspan::Meta;
 use crate::{pattern, GraphFact, Id, Sign, Signed, Triple};
 
 pub trait Resource<'a> {
-	type TripleIndexes: 'a + Iterator<Item = u32>;
+	type AsSubject: 'a + Iterator<Item = u32>;
+	type AsPredicate: 'a + Iterator<Item = u32>;
+	type AsObject: 'a + Iterator<Item = u32>;
 
-	fn as_subject(&self) -> Self::TripleIndexes;
+	fn as_subject(&self) -> Self::AsSubject;
 
-	fn as_predicate(&self) -> Self::TripleIndexes;
+	fn as_predicate(&self) -> Self::AsPredicate;
 
-	fn as_object(&self) -> Self::TripleIndexes;
+	fn as_object(&self) -> Self::AsObject;
 }
 
 pub trait Graph<'a>: Clone {
@@ -82,9 +84,9 @@ pub enum ResourceFacts<'a, G: Graph<'a>> {
 	None,
 	Some {
 		graph: G,
-		subject: Peekable<<G::Resource as Resource<'a>>::TripleIndexes>,
-		predicate: Peekable<<G::Resource as Resource<'a>>::TripleIndexes>,
-		object: Peekable<<G::Resource as Resource<'a>>::TripleIndexes>,
+		subject: Peekable<<G::Resource as Resource<'a>>::AsSubject>,
+		predicate: Peekable<<G::Resource as Resource<'a>>::AsPredicate>,
+		object: Peekable<<G::Resource as Resource<'a>>::AsObject>,
 	},
 }
 
@@ -193,9 +195,9 @@ enum RawMatching<'a, G: Graph<'a>> {
 	All(G::Triples),
 	Constrained {
 		graph: G,
-		subject: Option<<G::Resource as Resource<'a>>::TripleIndexes>,
-		predicate: Option<<G::Resource as Resource<'a>>::TripleIndexes>,
-		object: Option<<G::Resource as Resource<'a>>::TripleIndexes>,
+		subject: Option<<G::Resource as Resource<'a>>::AsSubject>,
+		predicate: Option<<G::Resource as Resource<'a>>::AsPredicate>,
+		object: Option<<G::Resource as Resource<'a>>::AsObject>,
 	},
 }
 
@@ -266,18 +268,36 @@ impl<'a, G: Graph<'a>> Iterator for RawMatching<'a, G> {
 					}
 				}
 
+				enum Iter<'a, 'r, R: Resource<'a>> {
+					Subject(&'r mut R::AsSubject),
+					Predicate(&'r mut R::AsPredicate),
+					Object(&'r mut R::AsObject),
+				}
+
+				impl<'a, 'r, R: Resource<'a>> Iterator for Iter<'a, 'r, R> {
+					type Item = u32;
+
+					fn next(&mut self) -> Option<Self::Item> {
+						match self {
+							Self::Subject(i) => i.next(),
+							Self::Predicate(i) => i.next(),
+							Self::Object(i) => i.next()
+						}
+					}
+				}
+
 				let mut state = State::Subject;
 				let mut candidate = None;
 				let mut count = 0;
 
 				while count < 3 {
 					let iter = match state {
-						State::Subject => subject.as_mut(),
-						State::Predicate => predicate.as_mut(),
-						State::Object => object.as_mut(),
+						State::Subject => subject.as_mut().map(Iter::<G::Resource>::Subject),
+						State::Predicate => predicate.as_mut().map(Iter::Predicate),
+						State::Object => object.as_mut().map(Iter::Object),
 					};
 
-					if let Some(iter) = iter {
+					if let Some(mut iter) = iter {
 						loop {
 							match iter.next() {
 								Some(i) => match candidate {

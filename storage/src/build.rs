@@ -13,7 +13,7 @@ use rdf_types::{
 
 use crate::{
 	encode::PageError, first_page_offset, graphs_per_page, page, triples_per_page, Encode, Header,
-	Tag, Version,
+	Tag, Version, layers_per_page,
 };
 
 pub const DEFAULT_PAGE_SIZE: u32 = 4096;
@@ -37,12 +37,12 @@ pub trait LexicalLiteral: LiteralVocabulary {
 	fn lexical_type<'a>(
 		&'a self,
 		ty: &'a Self::Type,
-	) -> Option<rdf_types::literal::Type<Iri<'a>, LanguageTag<'a>>>;
+	) -> Option<rdf_types::literal::Type<&'a Iri, LanguageTag<'a>>>;
 
 	fn lexical_literal<'a>(
 		&'a self,
 		literal: &'a Self::Literal,
-	) -> Option<rdf_types::Literal<rdf_types::literal::Type<Iri<'a>, LanguageTag<'a>>, &'a [u8]>> {
+	) -> Option<rdf_types::Literal<rdf_types::literal::Type<&'a Iri, LanguageTag<'a>>, &'a [u8]>> {
 		let l = self.literal(literal)?;
 		Some(rdf_types::Literal::new(
 			self.lexical_value(l.value())?,
@@ -59,7 +59,7 @@ impl LexicalLiteral for IndexVocabulary {
 	fn lexical_type<'a>(
 		&'a self,
 		ty: &'a Self::Type,
-	) -> Option<rdf_types::literal::Type<Iri<'a>, LanguageTag<'a>>> {
+	) -> Option<rdf_types::literal::Type<&'a Iri, LanguageTag<'a>>> {
 		match ty {
 			rdf_types::literal::Type::Any(iri) => {
 				Some(rdf_types::literal::Type::Any(self.iri(iri)?))
@@ -73,8 +73,9 @@ impl LexicalLiteral for IndexVocabulary {
 
 pub fn build<V: Vocabulary, W: Write + Seek>(
 	vocabulary: &V,
-	interpretation: &inferdf_core::interpretation::LocalInterpretation<V>,
+	interpretation: &inferdf_core::interpretation::Local<V>,
 	dataset: &inferdf_core::dataset::LocalDataset,
+	classification: &inferdf_core::class::classification::Local,
 	output: &mut BufWriter<W>,
 	options: Options,
 ) -> Result<(), PageError>
@@ -83,6 +84,7 @@ where
 	V::Literal: Eq + Hash,
 	V: LexicalLiteral,
 {
+	let layers_per_page = layers_per_page(options.page_size);
 	let graphs_per_page = graphs_per_page(options.page_size);
 
 	let mut header = Header {
@@ -93,6 +95,11 @@ where
 		iri_page_count: 0,
 		literal_count: interpretation.terms_by_literal().len() as u32,
 		literal_page_count: 0,
+		classification_layer_count: classification.layers.len() as u32,
+		classification_layer_page_count: DivCeil::div_ceil(
+			classification.layers.len() as u32,
+			layers_per_page
+		),
 		resource_count: interpretation.len(),
 		resource_page_count: 0,
 		named_graph_count: dataset.named_graph_count() as u32,
@@ -103,14 +110,17 @@ where
 		default_graph: page::graphs::Description::default(),
 	};
 
+	// Move to the first page.
 	let first_page_offset = first_page_offset(options.page_size);
 	output.seek(std::io::SeekFrom::Start(first_page_offset))?;
 
+	// Write IRIs.
 	let mut iris: Vec<_> = interpretation
 		.terms_by_iri()
 		.iter()
 		.map(|(iri, id)| (iri, vocabulary.iri(iri).unwrap(), *id))
 		.collect();
+	eprintln!("{} IRIs", iris.len());
 	let mut iri_paths = HashMap::new();
 	iris.sort_unstable_by(|a, b| a.1.cmp(&b.1));
 	for page in page::iris::Pages::new(
@@ -125,6 +135,7 @@ where
 		header.iri_page_count += 1;
 	}
 
+	// Write literals.
 	let mut literals: Vec<_> = interpretation
 		.terms_by_literal()
 		.iter()
@@ -145,6 +156,14 @@ where
 		header.literal_page_count += 1;
 	}
 
+	// Skip classification layer descriptions for now.
+	let classification_layers_first_page =
+		header.iri_page_count + header.literal_page_count;
+	output.seek(io::SeekFrom::Current(
+		(header.classification_layer_page_count * header.page_size) as i64,
+	))?;
+
+	// Write resources.
 	let resources = interpretation.iter().map(|(id, r)| {
 		page::resource_terms::Entry::new(
 			id,
@@ -164,20 +183,39 @@ where
 		header.resource_page_count += 1;
 	}
 
+	// Skip named graph descriptions pages for now.
 	let named_graphs_first_page =
-		header.iri_page_count + header.literal_page_count + header.resource_page_count;
-	let mut page_count = named_graphs_first_page + header.named_graph_page_count;
-
-	// skip named graph descriptions pages for now.
+		header.iri_page_count + header.literal_page_count + header.classification_layer_page_count + header.resource_page_count;
 	output.seek(io::SeekFrom::Current(
 		(header.named_graph_page_count * header.page_size) as i64,
 	))?;
 
-	// write default graph.
+	// From now on, pages are assigned dynamic indexes.
+	let mut page_count = named_graphs_first_page + header.named_graph_page_count;
+
+	// Write classification layers.
+	let mut layer_descriptions = Vec::new();
+	for layer in &classification.layers {
+		let mut entry = page::classification_layers::Entry {
+			page_count: 0,
+			group_count: layer.groups.len() as u32,
+			first_page: page_count
+		};
+
+		for page in page::classification_layer::Pages::new(options.page_size, layer.groups.iter().cloned()) {
+			page.encode_page(options.page_size, output)?;
+			entry.page_count += 1;
+		}
+
+		page_count += entry.page_count;
+		layer_descriptions.push(entry);
+	}
+
+	// Write default graph.
 	header.default_graph = build_graph(dataset.default_graph(), output, options, page_count)?;
 	page_count += header.default_graph.page_count();
 
-	// write named graphs.
+	// Write named graphs.
 	let mut named_graph_entries = Vec::new();
 	let mut named_graphs: Vec<_> = dataset.named_graphs().collect();
 	named_graphs.sort_unstable_by_key(|(id, _)| *id);
@@ -187,7 +225,15 @@ where
 		page_count += description.page_count();
 	}
 
-	// get back to write the named graphs descriptions.
+	// Get back to write the classification layers descriptions.
+	output.seek(io::SeekFrom::Start(
+		first_page_offset + (header.page_size * classification_layers_first_page) as u64,
+	))?;
+	for page in page::classification_layers::Pages::new(options.page_size, layer_descriptions.into_iter()) {
+		page.encode_page(options.page_size, output)?;
+	}
+
+	// Get back to write the named graphs descriptions.
 	output.seek(io::SeekFrom::Start(
 		first_page_offset + (header.page_size * named_graphs_first_page) as u64,
 	))?;
@@ -195,7 +241,7 @@ where
 		page.encode_page(options.page_size, output)?
 	}
 
-	// get to the begining to write the header.
+	// Get to the begining to write the header.
 	output.seek(io::SeekFrom::Start(0))?;
 	header.encode(output)?;
 	Ok(())

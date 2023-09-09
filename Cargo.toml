@@ -16,13 +16,15 @@ inferdf-core = { path = "core" }
 inferdf-inference = { path = "inference" }
 inferdf-storage = { path = "storage" }
 log = "0.4.17"
-rdf-types = { version = "0.15.4", features = ["meta", "contextual", "serde"] }
-nquads-syntax = "0.13.0"
-iref = { version = "2.2.3", features = ["hashbrown", "serde"] }
+rdf-types = { version = "0.16", features = ["meta", "contextual", "serde"] }
+nquads-syntax = "0.15.0"
+iref = { version = "3.1.2", features = ["hashbrown", "serde"] }
 langtag = "0.3.3"
 derivative = "2.2.0"
+educe = "0.4.22"
 hashbrown = "0.14.0"
 contextual = "0.1.6"
 locspan = { version = "0.7.13", features = ["reporting"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.40"
+paged = { path = "/home/timothee/Projets/utils/data-structures/paged/paged" }

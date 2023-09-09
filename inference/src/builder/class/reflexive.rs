@@ -9,12 +9,12 @@ use normal_form::Normalize;
 
 use crate::utils::scc::Components;
 
-use super::{LayerClass, LayerGroups, Node, ResourceNode};
+use super::{LayerClass, LayerGroupsBuilder, Node, ResourceNode};
 
 pub(crate) fn compute_component(
 	components: &Components<Node>,
 	classes: &HashMap<Id, Class>,
-	new_groups: &mut LayerGroups,
+	new_groups: &mut LayerGroupsBuilder,
 	new_classes: &mut HashMap<Id, LayerClass>,
 	c: usize,
 ) {

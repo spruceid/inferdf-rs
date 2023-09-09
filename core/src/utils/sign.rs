@@ -1,3 +1,4 @@
+use paged::Paged;
 use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,13 @@ use crate::{
 	Id, ReplaceId,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged, Serialize, Deserialize)]
+#[paged(
+	context(C),
+	bounds(T: paged::EncodeSized),
+	encode_bounds(T: paged::Encode<C> + paged::EncodeOnHeap<C>),
+	decode_bounds(T: paged::Decode<C> + paged::DecodeFromHeap<C>)
+)]
 pub struct Signed<T>(pub Sign, pub T);
 
 impl<T> Signed<T> {
@@ -102,7 +109,7 @@ impl<T: Instantiate> Instantiate for Signed<T> {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged, Serialize, Deserialize)]
 pub enum Sign {
 	Positive,
 	Negative,

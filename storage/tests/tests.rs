@@ -60,6 +60,8 @@ fn build_module(
 			.unwrap();
 	}
 
+	let classification = builder.classify_anonymous_nodes().unwrap();
+
 	let mut cursor = Cursor::new(Vec::new());
 
 	{
@@ -68,6 +70,7 @@ fn build_module(
 			&*vocabulary,
 			builder.interpretation().local_interpretation(),
 			builder.dataset(),
+			&classification,
 			&mut output,
 			inferdf_storage::BuildOptions { page_size: 512 },
 		)

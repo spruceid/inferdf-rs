@@ -147,12 +147,15 @@ fn main() -> ExitCode {
 		return ExitCode::FAILURE;
 	}
 
+	let classification = builder.classify_anonymous_nodes().expect("unable to classify nodes");
+
 	let mut output = BufWriter::new(fs::File::create(args.output).expect("unable to open file"));
 
 	inferdf_storage::build(
 		&vocabulary,
 		builder.interpretation().local_interpretation(),
 		builder.dataset(),
+		&classification,
 		&mut output,
 		inferdf_storage::BuildOptions {
 			page_size: args.page_size,

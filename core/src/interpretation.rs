@@ -1,12 +1,14 @@
 use rdf_types::Vocabulary;
 
-use crate::{uninterpreted, Id, IteratorWith, Quad, Triple};
+use crate::{
+	uninterpreted, Id, IteratorWith, Quad, Triple,
+};
 
 pub mod composite;
 pub mod local;
 
 pub use composite::Interpretation as Composite;
-pub use local::LocalInterpretation;
+pub use local::Interpretation as Local;
 
 #[derive(Debug, thiserror::Error)]
 #[error("equality contradiction")]
@@ -16,20 +18,17 @@ pub trait Resource<'a, V: Vocabulary>: Clone {
 	type Error;
 	type Iris: 'a + IteratorWith<V, Item = Result<V::Iri, Self::Error>>;
 	type Literals: 'a + IteratorWith<V, Item = Result<V::Literal, Self::Error>>;
-	type Ids: 'a + Iterator<Item = Id>;
+	type DifferentFrom: 'a + Iterator<Item = Id>;
 
 	fn as_iri(&self) -> Self::Iris;
 
-	// fn as_blank(&self) -> Self::Blanks;
-
 	fn as_literal(&self) -> Self::Literals;
 
-	fn different_from(&self) -> Self::Ids;
+	fn different_from(&self) -> Self::DifferentFrom;
 
 	fn terms(&self) -> ResourceTerms<'a, V, Self> {
 		ResourceTerms {
 			as_iri: self.as_iri(),
-			// as_blank: self.as_blank(),
 			as_literal: self.as_literal(),
 		}
 	}
@@ -76,7 +75,16 @@ impl<'a, V: Vocabulary, R: Resource<'a, V>> IteratorWith<V> for OptionalResource
 /// Interpretation.
 pub trait Interpretation<'a, V: Vocabulary>: Clone {
 	type Error;
+
 	type Resource: Resource<'a, V, Error = Self::Error>;
+
+	/// Iterator over the interpreted resources.
+	type Resources: Iterator<Item = Result<(Id, Self::Resource), Self::Error>>;
+
+	/// Returns an iterator over all the interpreted resources.
+	/// 
+	/// The iterator may yield the same resource more than once.
+	fn resources(&self) -> Result<Self::Resources, Self::Error>;
 
 	fn get(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error>;
 

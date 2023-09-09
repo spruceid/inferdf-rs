@@ -1,6 +1,8 @@
+use paged::Paged;
+
 use crate::Id;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged)]
 pub enum Cause {
 	Stated(u32),
 	Entailed(u32),

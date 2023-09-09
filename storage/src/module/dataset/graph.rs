@@ -1,230 +1,157 @@
-use std::{
-	io::{Read, Seek},
-	iter::Copied,
-};
+use std::io;
 
-use derivative::Derivative;
-use inferdf_core::{Cause, FailibleIterator, GetOrTryInsertWith, Id, Signed, Triple};
-use locspan::Meta;
+use educe::Educe;
+use inferdf_core::{GraphFact, Id};
+use paged::{cache::UnboundRef, no_context_mut, UnboundSliceIter};
 use rdf_types::Vocabulary;
 
-use crate::{
-	binary_search_page,
-	module::{cache, Error},
-	page, Module,
-};
+use super::Error;
+use crate::{header, Module};
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""), Copy(bound = ""))]
+#[derive(Educe)]
+#[educe(Clone)]
 pub struct Graph<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
-	desc: page::graphs::Description,
+	desc: header::GraphDescription,
 }
 
-impl<'a, V: Vocabulary, R: Read> Graph<'a, V, R> {
-	pub fn new(module: &'a Module<V, R>, desc: page::graphs::Description) -> Self {
+impl<'a, V: Vocabulary, R> Graph<'a, V, R> {
+	pub(crate) fn new(module: &'a Module<V, R>, desc: header::GraphDescription) -> Self {
 		Self { module, desc }
 	}
 }
 
-impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::dataset::Graph<'a> for Graph<'a, V, R> {
+impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a>
+	for Graph<'a, V, R>
+{
 	type Error = Error;
-	type Resource = Resource<'a>;
-	type Resources = Resources<'a, V, R>;
-	type Triples = Triples<'a, V, R>;
 
-	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Error> {
-		Resource::find(
-			self.module,
-			id,
-			self.desc.first_page + self.desc.triple_page_count,
-			self.desc.resource_page_count,
-		)
-	}
+	type Resource = Resource<'a>;
+
+	type Resources = Resources<'a, R>;
+
+	type Triples = Triples<'a, R>;
 
 	fn resources(&self) -> Self::Resources {
 		Resources {
-			module: self.module,
-			page_index: self.desc.first_page + self.desc.triple_page_count,
-			next_page_index: self.desc.first_page
-				+ self.desc.triple_page_count
-				+ self.desc.resource_page_count,
-			page: None,
+			r: self.module.reader.iter(
+				self.desc.resources,
+				&self.module.cache.graph_resources,
+				self.module.header.heap,
+			),
 		}
 	}
 
-	fn get_triple(&self, i: u32) -> Result<Option<Meta<Signed<Triple>, Cause>>, Error> {
-		let (p, page_i) =
-			page::TriplesPage::triple_page_index(self.module.sections.triples_per_page, i);
-		let page_triples_count = page::triples::page_triple_count(
-			self.desc.triple_count,
-			self.desc.first_page,
-			p,
-			self.module.sections.triples_per_page,
-		);
-		if p < self.desc.triple_page_count {
-			let page = self
-				.module
-				.get_triples_page(p + self.desc.first_page, page_triples_count)?;
-			Ok(page.get(page_i))
-		} else {
-			Ok(None)
-		}
+	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error> {
+		let entry = self.module.reader.binary_search_by_key(
+			self.desc.resources,
+			&self.module.cache.graph_resources,
+			no_context_mut(),
+			self.module.header.heap,
+			|entry, _| entry.id.cmp(&id),
+		)?;
+
+		Ok(entry.map(|r| Resource { r }))
 	}
 
 	fn triples(&self) -> Self::Triples {
 		Triples {
-			module: self.module,
+			r: self.module.reader.iter(
+				self.desc.facts,
+				&self.module.cache.graph_facts,
+				self.module.header.heap,
+			),
 			index: 0,
-			first_page_index: self.desc.first_page,
-			page_index: self.desc.first_page,
-			next_page_index: self.desc.first_page + self.desc.triple_page_count,
-			triple_count: self.desc.triple_count,
-			page: None,
+		}
+	}
+
+	fn get_triple(&self, index: u32) -> Result<Option<inferdf_core::GraphFact>, Self::Error> {
+		self.module
+			.reader
+			.get(
+				self.desc.facts,
+				&self.module.cache.graph_facts,
+				no_context_mut(),
+				self.module.header.heap,
+				index,
+			)
+			.map(|o| o.map(|t| (*t).into()))
+	}
+}
+
+pub struct Resource<'a> {
+	r: paged::Ref<'a, header::GraphResource, UnboundRef<header::GraphResource>>,
+}
+
+impl<'a> inferdf_core::dataset::graph::Resource<'a> for Resource<'a> {
+	type AsSubject = ResourceOccurrences<'a>;
+	type AsPredicate = ResourceOccurrences<'a>;
+	type AsObject = ResourceOccurrences<'a>;
+
+	fn as_subject(&self) -> Self::AsSubject {
+		ResourceOccurrences {
+			inner: self.r.clone().map(header::GraphResourceAsSubjectBinder),
+		}
+	}
+
+	fn as_predicate(&self) -> Self::AsPredicate {
+		ResourceOccurrences {
+			inner: self.r.clone().map(header::GraphResourceAsPredicateBinder),
+		}
+	}
+
+	fn as_object(&self) -> Self::AsObject {
+		ResourceOccurrences {
+			inner: self.r.clone().map(header::GraphResourceAsObjectBinder),
 		}
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct Resource<'a> {
-	entry: cache::Ref<'a, page::resource_triples::Entry>,
+pub struct ResourceOccurrences<'a> {
+	inner: paged::Ref<'a, header::GraphResource, UnboundSliceIter<u32>>,
 }
 
-impl<'a> Resource<'a> {
-	fn find<V: Vocabulary, R: Read + Seek>(
-		module: &'a Module<V, R>,
-		id: Id,
-		first_page: u32,
-		page_count: u32,
-	) -> Result<Option<Self>, Error> {
-		binary_search_page(first_page, first_page + page_count, |i| {
-			let page = module.get_resource_triples_page(i)?;
-			Ok(page.find(id).map(|r| Resource {
-				entry: cache::Ref::map(page, |page| page.get(r).unwrap()),
-			}))
+impl<'a> Iterator for ResourceOccurrences<'a> {
+	type Item = u32;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner.next().map(|item| item.copied().unwrap())
+	}
+}
+
+pub struct Resources<'a, R> {
+	r: paged::Iter<'a, 'a, R, header::GraphResource>,
+}
+
+impl<'a, R: io::Seek + io::Read> Iterator for Resources<'a, R> {
+	type Item = Result<(Id, Resource<'a>), Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.r.next().map(|r| {
+			r.map(|resource| {
+				let id = resource.id;
+				(id, Resource { r: resource })
+			})
 		})
 	}
 }
 
-impl<'a> inferdf_core::dataset::graph::Resource<'a> for Resource<'a> {
-	type TripleIndexes = cache::IntoIterEscape<'a, Copied<std::slice::Iter<'a, u32>>>;
-
-	fn as_subject(&self) -> Self::TripleIndexes {
-		cache::Aliasing::into_iter_escape(cache::Ref::aliasing_map(self.entry.clone(), |e| {
-			e.as_subject.iter().copied()
-		}))
-	}
-
-	fn as_predicate(&self) -> Self::TripleIndexes {
-		cache::Aliasing::into_iter_escape(cache::Ref::aliasing_map(self.entry.clone(), |e| {
-			e.as_predicate.iter().copied()
-		}))
-	}
-
-	fn as_object(&self) -> Self::TripleIndexes {
-		cache::Aliasing::into_iter_escape(cache::Ref::aliasing_map(self.entry.clone(), |e| {
-			e.as_object.iter().copied()
-		}))
-	}
-}
-
-pub struct Resources<'a, V: Vocabulary, R> {
-	module: &'a Module<V, R>,
-	page_index: u32,
-	next_page_index: u32,
-	page: Option<cache::Aliasing<'a, page::resource_triples::Iter<'a>>>,
-}
-
-impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Resources<'a, V, R> {
-	type Item = (Id, Resource<'a>);
-	type Error = Error;
-
-	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
-		while self.page_index < self.next_page_index {
-			let iter = self.page.get_or_try_insert_with::<Error>(|| {
-				Ok(cache::Ref::aliasing_map(
-					self.module.get_resource_triples_page(self.page_index)?,
-					|p| p.iter(),
-				))
-			})?;
-
-			match iter.next() {
-				Some(entry) => {
-					let entry = entry.into_ref();
-					return Ok(Some((entry.id, Resource { entry })));
-				}
-				None => {
-					self.page = None;
-					self.page_index += 1
-				}
-			}
-		}
-
-		Ok(None)
-	}
-}
-
-impl<'a, V: Vocabulary, R: Read + Seek> Iterator for Resources<'a, V, R> {
-	type Item = Result<(Id, Resource<'a>), Error>;
-
-	fn next(&mut self) -> Option<Self::Item> {
-		self.try_next().transpose()
-	}
-}
-
-pub struct Triples<'a, V: Vocabulary, R> {
-	module: &'a Module<V, R>,
+pub struct Triples<'a, R> {
+	r: paged::Iter<'a, 'a, R, header::GraphFact>,
 	index: u32,
-	first_page_index: u32,
-	page_index: u32,
-	next_page_index: u32,
-	triple_count: u32,
-	page: Option<cache::IntoIterEscape<'a, page::triples::Iter<'a>>>,
 }
 
-impl<'a, V: Vocabulary, R: Read + Seek> FailibleIterator for Triples<'a, V, R> {
-	type Item = (u32, Meta<Signed<Triple>, Cause>);
-	type Error = Error;
-
-	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
-		while self.page_index < self.next_page_index {
-			let iter = self.page.get_or_try_insert_with::<Error>(|| {
-				let page_triples_count = page::triples::page_triple_count(
-					self.triple_count,
-					self.first_page_index,
-					self.page_index,
-					self.module.sections.triples_per_page,
-				);
-				Ok(cache::Ref::aliasing_map(
-					self.module
-						.get_triples_page(self.page_index, page_triples_count)?,
-					|p| p.iter(),
-				)
-				.into_iter_escape())
-			})?;
-
-			match iter.next() {
-				Some(triple) => {
-					let i = self.index;
-					self.index += 1;
-					return Ok(Some((i, triple)));
-				}
-				None => {
-					self.page = None;
-					self.page_index += 1
-				}
-			}
-		}
-
-		Ok(None)
-	}
-}
-
-impl<'a, V: Vocabulary, R: Read + Seek> Iterator for Triples<'a, V, R> {
-	type Item = Result<(u32, Meta<Signed<Triple>, Cause>), Error>;
+impl<'a, R: io::Seek + io::Read> Iterator for Triples<'a, R> {
+	type Item = Result<(u32, GraphFact), Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.try_next().transpose()
+		self.r.next().map(|r| {
+			r.map(|fact| {
+				let i = self.index;
+				self.index += 1;
+				let fact: header::GraphFact = *fact;
+				(i, fact.into())
+			})
+		})
 	}
 }

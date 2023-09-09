@@ -6,7 +6,7 @@ use std::hash::Hash;
 use hashbrown::{HashMap, HashSet};
 use indexmap::IndexSet;
 use inferdf_core::{
-	class::{self, Class},
+	class::{self, Class, classification},
 	Id, Module, Signed,
 };
 use locspan::Meta;
@@ -19,19 +19,22 @@ use super::Builder;
 mod non_reflexive;
 mod reflexive;
 
-pub struct Classification {
-	pub groups: Vec<class::group::Description>,
-	pub classes: HashMap<Id, Class>,
-}
-
 #[derive(Default)]
-struct Groups {
+struct LayerGroups {
+	layer: u32,
 	set: IndexSet<class::group::Description>,
 }
 
-impl Groups {
+impl LayerGroups {
+	pub fn new(layer: u32) -> Self {
+		Self {
+			layer,
+			set: IndexSet::new(),
+		}
+	}
+
 	pub fn insert(&mut self, description: class::group::Description) -> class::GroupId {
-		class::GroupId::new(self.set.insert_full(description).0 as u32)
+		class::GroupId::new(self.layer, self.set.insert_full(description).0 as u32)
 	}
 
 	pub fn into_vec(self) -> Vec<class::group::Description> {
@@ -45,7 +48,7 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 	/// # Classification algorithm
 	///
 	/// Overview of the algorithm:
-	/// - The local dataset is scaned to find all the anonymous nodes.
+	/// - The local dataset is scanned to find all the anonymous nodes.
 	/// - A dependency graph is computed where each node is an anonymous node.
 	/// - Graph nodes are merged into strongly connected components.
 	/// - SCCs are treated by dependency depth, starting by the leaves:
@@ -54,13 +57,13 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 	///   - Otherwise the class is directly computed.
 	///   - The depth's component classes are sorted and given a unique index
 	///     (following the classes ascending order).
-	pub fn classify_anonymous_nodes(&mut self) -> Result<Classification, D::Error> {
+	pub fn classify_anonymous_nodes(&mut self) -> Result<classification::Local, D::Error> {
 		let mut graph = Graph {
 			nodes: HashMap::new(),
 		};
 
 		// Find anonymous nodes and compute the dependency graph.
-		for (id, r) in self.local_interpretation().iter() {
+		for (id, r) in self.interpretation().iter() {
 			if r.is_anonymous() {
 				let mut successors = HashSet::new();
 
@@ -84,64 +87,71 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 			}
 		}
 
-		let components = graph.strongly_connected_components();
-
-		let mut groups = Groups::default();
+		let mut layers = Vec::new();
 		let mut classes = HashMap::new();
 
-		// Organize SCCs by depth.
-		let depths = components.depths();
-		let max_depth = *depths.iter().max().unwrap();
-		let mut by_depth: Vec<Vec<usize>> = Vec::new();
-		by_depth.resize_with(max_depth, Vec::new);
+		if !graph.is_empty() {
+			let components = graph.strongly_connected_components();
 
-		for (c, d) in depths.into_iter().enumerate() {
-			by_depth[d].push(c);
-		}
+			// Organize SCCs by depth.
+			let depths = components.depths();
+			let max_depth = *depths.iter().max().unwrap();
+			let mut by_depth: Vec<Vec<usize>> = Vec::new();
+			by_depth.resize_with(max_depth, Vec::new);
 
-		// Compute the class of each component, proceding by depth, starting by
-		// the leaves.
-		for layer_components in by_depth.into_iter().rev() {
-			let mut layer_groups = LayerGroups::default();
-			let mut layer_classes = HashMap::new();
-
-			// Compute each component's class description.
-			for c in layer_components {
-				if components.is_reflexive(c) {
-					reflexive::compute_component(
-						&components,
-						&classes,
-						&mut layer_groups,
-						&mut layer_classes,
-						c,
-					)
-				} else {
-					non_reflexive::compute_component(
-						&components,
-						&classes,
-						&mut layer_groups,
-						&mut layer_classes,
-						c,
-					)
-				}
+			for (c, d) in depths.into_iter().enumerate() {
+				by_depth[d].push(c);
 			}
 
-			layer_groups.insert_all(&mut groups, &mut classes, layer_classes)
+			// Compute the class of each component, proceding by depth, starting by
+			// the leaves.
+			for (l, layer_components) in by_depth.into_iter().rev().enumerate() {
+				let mut layer_groups = LayerGroupsBuilder::new(l as u32);
+				let mut layer_classes = HashMap::new();
+
+				// Compute each component's class description.
+				for c in layer_components {
+					if components.is_reflexive(c) {
+						reflexive::compute_component(
+							&components,
+							&classes,
+							&mut layer_groups,
+							&mut layer_classes,
+							c,
+						)
+					} else {
+						non_reflexive::compute_component(
+							&components,
+							&classes,
+							&mut layer_groups,
+							&mut layer_classes,
+							c,
+						)
+					}
+				}
+
+				layers.push(layer_groups.insert_all(&mut classes, layer_classes))
+			}
 		}
 
-		Ok(Classification {
-			groups: groups.into_vec(),
-			classes,
-		})
+		Ok(classification::Local { layers, classes })
 	}
 }
 
 #[derive(Default)]
-pub(crate) struct LayerGroups {
+pub(crate) struct LayerGroupsBuilder {
+	layer: u32,
 	list: Vec<class::group::Description>,
 }
 
-impl LayerGroups {
+impl LayerGroupsBuilder {
+	pub fn new(layer: u32) -> Self {
+		Self {
+			layer,
+			list: Vec::new(),
+		}
+	}
+
 	fn add(&mut self, group: class::group::Description) -> usize {
 		let i = self.list.len();
 		self.list.push(group);
@@ -168,12 +178,12 @@ impl LayerGroups {
 
 	fn insert_all(
 		mut self,
-		groups: &mut Groups,
 		classes: &mut HashMap<Id, Class>,
 		layer_classes: HashMap<Id, LayerClass>,
-	) {
+	) -> classification::local::Layer {
+		let mut result = LayerGroups::new(self.layer);
 		let substitution = self.sort();
-		let group_ids: Vec<_> = self.list.into_iter().map(|g| groups.insert(g)).collect();
+		let group_ids: Vec<_> = self.list.into_iter().map(|g| result.insert(g)).collect();
 		for (id, layer_class) in layer_classes {
 			let class = Class::new(
 				group_ids[substitution[layer_class.group]],
@@ -181,6 +191,8 @@ impl LayerGroups {
 			);
 			classes.insert(id, class);
 		}
+
+		classification::local::Layer::new(result.into_vec())
 	}
 }
 
@@ -203,7 +215,7 @@ pub(crate) enum ResourceNode {
 
 impl ResourceNode {
 	fn new<V: Vocabulary, D: Module<V>, S>(builder: &Builder<V, D, S>, id: Id) -> Self {
-		let r = builder.local_interpretation().get(id).unwrap();
+		let r = builder.interpretation().get(id).unwrap();
 		if r.is_anonymous() {
 			Self::Anonymous(id)
 		} else {
@@ -220,6 +232,12 @@ pub(crate) enum Node {
 
 struct Graph {
 	nodes: HashMap<Node, HashSet<Node>>,
+}
+
+impl Graph {
+	pub fn is_empty(&self) -> bool {
+		self.nodes.is_empty()
+	}
 }
 
 impl SccGraph for Graph {

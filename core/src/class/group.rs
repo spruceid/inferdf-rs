@@ -1,23 +1,29 @@
+use paged::{Paged, utils::Inline};
+
 use crate::Signed;
 
 use super::Reference;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GroupId(u32);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged)]
+pub struct GroupId {
+	pub layer: u32,
+	pub index: u32,
+}
 
 impl GroupId {
-	pub fn new(i: u32) -> Self {
-		Self(i)
+	pub fn new(layer: u32, index: u32) -> Self {
+		Self { layer, index }
 	}
 }
 
 /// Resource group.
 ///
 /// A group is composed of mutually recursive resources.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Paged)]
+#[paged(heap)]
 pub struct Description {
 	/// Group members.
-	members: Vec<Member>,
+	pub members: Vec<Member>,
 }
 
 impl Description {
@@ -27,15 +33,18 @@ impl Description {
 }
 
 /// Group members.
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Paged)]
+#[paged(unsized)]
 pub struct Member {
 	/// Resource properties.
-	properties: Vec<Signed<(Reference, Reference)>>,
+	pub properties: Inline<Vec<Signed<(Reference, Reference)>>>,
 }
 
 impl Member {
 	pub fn new(properties: Vec<Signed<(Reference, Reference)>>) -> Self {
-		Self { properties }
+		Self {
+			properties: Inline(properties)
+		}
 	}
 
 	pub fn len(&self) -> usize {

@@ -12,7 +12,7 @@ clap = { version = "4.0", features = ["derive"] }
 rdf-types.workspace = true
 nquads-syntax.workspace = true
 contextual.workspace = true
-static-iref = "2.0.0"
+static-iref = "3.0.0"
 locspan = { version = "0.7.13", features = ["reporting"] }
 serde.workspace = true
 stderrlog = "0.5.4"

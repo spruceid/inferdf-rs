@@ -38,7 +38,7 @@ impl<E> From<dataset::Contradiction> for Error<E> {
 }
 
 impl<V: Vocabulary, D: Module<V>> Dependencies<V, D> {
-	/// Filter the given signed triple by lookgin for a similar triple in the
+	/// Filter the given signed triple by looking for a similar triple in the
 	/// dependencies datasets.
 	///
 	/// Returns `Ok(true)` if the signed triple is not in any dependency

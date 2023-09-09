@@ -7,17 +7,20 @@
 use crate::Id;
 
 pub mod group;
+pub mod classification;
 
 pub use group::GroupId;
+pub use classification::Classification;
+use paged::Paged;
 
 /// Class.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged)]
 pub struct Class {
 	/// Resource group.
-	group: GroupId,
+	pub group: GroupId,
 
 	/// Group member.
-	member: u32,
+	pub member: u32,
 }
 
 impl Class {
@@ -27,7 +30,7 @@ impl Class {
 }
 
 /// Group member of class reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged)]
 pub enum Reference {
 	Singleton(Id),
 	Class(Class),

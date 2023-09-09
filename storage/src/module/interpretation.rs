@@ -1,48 +1,72 @@
-use std::io::{Read, Seek};
+use std::io;
 
-use derivative::Derivative;
+use educe::Educe;
 use inferdf_core::{Id, IteratorWith};
-use rdf_types::Vocabulary;
+use iref::Iri;
+use langtag::LanguageTag;
+use paged::no_context_mut;
+use rdf_types::{literal, IriVocabularyMut, Literal, LiteralVocabulary, Vocabulary, VocabularyMut};
 
-use crate::{binary_search_page, page, DecodeWith};
+use crate::header;
 
-use super::{cache, Error, Module};
+use super::{Error, Module};
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""), Copy(bound = ""))]
+#[derive(Educe)]
+#[educe(Clone)]
 pub struct Interpretation<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
 }
 
 impl<'a, V: Vocabulary, R> Interpretation<'a, V, R> {
-	pub fn new(module: &'a Module<V, R>) -> Self {
-		Self { module }
+	pub(crate) fn new(
+		module: &'a Module<V, R>,
+	) -> Self {
+		Self {
+			module
+		}
 	}
 }
 
-impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::Interpretation<'a, V>
+impl<'a, V: VocabularyMut, R: io::Seek + io::Read> inferdf_core::Interpretation<'a, V>
 	for Interpretation<'a, V, R>
 where
-	V::Type: Ord,
-	V::Value: Ord,
-	V::Iri: Copy + DecodeWith<V>,
-	V::Literal: Copy + DecodeWith<V>,
+	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
+	V::Iri: Clone,
+	V::Literal: Clone,
+	V::Value: AsRef<str> + From<String>,
 {
 	type Error = Error;
+
 	type Resource = Resource<'a, V, R>;
 
+	type Resources = Resources<'a, V, R>;
+
+	fn resources(&self) -> Result<Self::Resources, Self::Error> {
+		Ok(Resources {
+			module: self.module,
+			r: self.module.reader.iter(
+				self.module.header.interpretation.resources,
+				&self.module.cache.interpretation_resources,
+				self.module.header.heap,
+			),
+		})
+	}
+
 	fn get(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error> {
-		binary_search_page(
-			self.module.sections.resources,
-			self.module.sections.resources + self.module.header.resource_page_count,
-			|i| {
-				let page = self.module.get_resources_page(i)?;
-				Ok(page.find(id).map(|r| Resource {
-					module: self.module,
-					entry: cache::Ref::map(page, |page| page.get(r).unwrap()),
-				}))
-			},
-		)
+		Ok(self
+			.module
+			.reader
+			.binary_search_by_key(
+				self.module.header.interpretation.resources,
+				&self.module.cache.interpretation_resources,
+				no_context_mut(),
+				self.module.header.heap,
+				|entry, _| entry.id.cmp(&id),
+			)?
+			.map(|r| Resource {
+				module: self.module,
+				r,
+			}))
 	}
 
 	fn iri_interpretation(
@@ -50,17 +74,19 @@ where
 		vocabulary: &mut V,
 		iri: V::Iri,
 	) -> Result<Option<Id>, Self::Error> {
-		binary_search_page(
-			self.module.sections.iris,
-			self.module.sections.iris + self.module.header.iri_page_count,
-			|i| {
-				let page = self.module.get_iris_page(vocabulary, i)?;
-				let iri = vocabulary.iri(&iri).unwrap();
-				Ok(page
-					.find(vocabulary, iri)
-					.map(|k| page.get(k).unwrap().interpretation))
+		let entry = self.module.reader.binary_search_by_key(
+			self.module.header.interpretation.iris,
+			&self.module.cache.iris,
+			vocabulary,
+			self.module.header.heap,
+			|entry, vocabulary| {
+				let a = vocabulary.iri(&entry.iri.0).unwrap();
+				let b = vocabulary.iri(&iri).unwrap();
+				a.cmp(b)
 			},
-		)
+		)?;
+
+		Ok(entry.map(|e| e.interpretation))
 	}
 
 	fn literal_interpretation(
@@ -68,95 +94,180 @@ where
 		vocabulary: &mut V,
 		literal: V::Literal,
 	) -> Result<Option<Id>, Self::Error> {
-		binary_search_page(
-			self.module.sections.literals,
-			self.module.sections.literals + self.module.header.literal_page_count,
-			|i| {
-				let page = self.module.get_literals_page(vocabulary, i)?;
-				let literal = vocabulary.literal(&literal).unwrap();
-				Ok(page
-					.find(vocabulary, literal)
-					.map(|k| page.get(k).unwrap().interpretation))
+		let entry = self.module.reader.binary_search_by_key(
+			self.module.header.interpretation.literals,
+			&self.module.cache.literals,
+			vocabulary,
+			self.module.header.heap,
+			|entry, vocabulary| {
+				let a = extract_literal(vocabulary, vocabulary.literal(&entry.literal.0).unwrap());
+				let b = extract_literal(vocabulary, vocabulary.literal(&literal).unwrap());
+				a.cmp(&b)
 			},
-		)
+		)?;
+
+		Ok(entry.map(|e| e.interpretation))
 	}
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct Resource<'a, V: Vocabulary, R> {
-	module: &'a Module<V, R>,
-	entry: cache::Ref<'a, page::resource_terms::Entry>,
+fn extract_literal<'a, V: Vocabulary>(
+	vocabulary: &'a V,
+	lit: &'a Literal<literal::Type<V::Iri, V::LanguageTag>, V::Value>,
+) -> Literal<literal::Type<&'a Iri, LanguageTag<'a>>, &'a str>
+where
+	V::Value: AsRef<str>,
+{
+	let ty = match lit.type_() {
+		literal::Type::Any(i) => literal::Type::Any(vocabulary.iri(i).unwrap()),
+		literal::Type::LangString(t) => {
+			literal::Type::LangString(vocabulary.language_tag(t).unwrap())
+		}
+	};
+
+	Literal::new(lit.value().as_ref(), ty)
 }
 
-impl<'a, V: Vocabulary, R: Read + Seek> inferdf_core::interpretation::Resource<'a, V>
+#[derive(Educe)]
+#[educe(Clone)]
+pub struct Resource<'a, V: Vocabulary, R> {
+	module: &'a Module<V, R>,
+	r: paged::EntryRef<'a, header::InterpretedResource>,
+}
+
+impl<'a, V: VocabularyMut, R: io::Seek + io::Read> inferdf_core::interpretation::Resource<'a, V>
 	for Resource<'a, V, R>
 where
-	V::Iri: Copy + DecodeWith<V>,
-	V::Literal: Copy + DecodeWith<V>,
+	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
+	V::Iri: Clone,
+	V::Literal: Clone,
+	V::Value: From<String>,
 {
 	type Error = Error;
+
 	type Iris = Iris<'a, V, R>;
+
 	type Literals = Literals<'a, V, R>;
-	type Ids = cache::IntoIterEscape<'a, page::resource_terms::DifferentFrom<'a>>;
+
+	type DifferentFrom = DifferentFrom<'a>;
 
 	fn as_iri(&self) -> Self::Iris {
 		Iris {
 			module: self.module,
-			iter: cache::Ref::aliasing_map(self.entry.clone(), |e| e.iter_known_iris())
-				.into_iter_escape(),
+			r: self.r.clone().map(header::InterpretationResourceIrisBinder),
 		}
 	}
 
 	fn as_literal(&self) -> Self::Literals {
 		Literals {
 			module: self.module,
-			iter: cache::Ref::aliasing_map(self.entry.clone(), |e| e.iter_known_literals())
-				.into_iter_escape(),
+			r: self
+				.r
+				.clone()
+				.map(header::InterpretationResourceLiteralsBinder),
 		}
 	}
 
-	fn different_from(&self) -> Self::Ids {
-		cache::Aliasing::into_iter_escape(cache::Ref::aliasing_map(self.entry.clone(), |e| {
-			e.iter_different_from()
-		}))
+	fn different_from(&self) -> Self::DifferentFrom {
+		DifferentFrom {
+			r: self.r.clone().map(header::InterpretationResourceNeBinder),
+		}
 	}
 }
 
 pub struct Iris<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
-	iter: cache::IntoIterEscape<'a, page::resource_terms::IriPaths<'a>>,
+	r: paged::Ref<'a, header::InterpretedResource, paged::UnboundSliceIter<u32>>,
 }
 
-impl<'a, V: Vocabulary, R: Read + Seek> IteratorWith<V> for Iris<'a, V, R>
+impl<'a, V: Vocabulary + IriVocabularyMut, R: io::Seek + io::Read> IteratorWith<V>
+	for Iris<'a, V, R>
 where
-	V::Iri: Copy + DecodeWith<V>,
-	V::Literal: Copy + DecodeWith<V>,
+	V::Iri: Clone,
 {
 	type Item = Result<V::Iri, Error>;
 
 	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
-		self.iter
-			.next()
-			.map(|i| Ok(self.module.get_iri(vocabulary, i)?.unwrap()))
+		self.r.next().map(|r| {
+			let iri_entry = self
+				.module
+				.reader
+				.get(
+					self.module.header.interpretation.iris,
+					&self.module.cache.iris,
+					vocabulary,
+					self.module.header.heap,
+					*r,
+				)?
+				.unwrap();
+
+			Ok(iri_entry.iri.0.clone())
+		})
 	}
 }
 
 pub struct Literals<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
-	iter: cache::IntoIterEscape<'a, page::resource_terms::LiteralPaths<'a>>,
+	r: paged::Ref<'a, header::InterpretedResource, paged::UnboundSliceIter<u32>>,
 }
 
-impl<'a, V: Vocabulary, R: Read + Seek> IteratorWith<V> for Literals<'a, V, R>
+impl<'a, V: VocabularyMut, R: io::Seek + io::Read> IteratorWith<V> for Literals<'a, V, R>
 where
-	V::Iri: Copy + DecodeWith<V>,
-	V::Literal: Copy + DecodeWith<V>,
+	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
+	V::Literal: Clone,
+	V::Value: From<String>,
 {
 	type Item = Result<V::Literal, Error>;
 
 	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
-		self.iter
-			.next()
-			.map(|i| Ok(self.module.get_literal(vocabulary, i)?.unwrap()))
+		self.r.next().map(|r| {
+			let literal_entry = self
+				.module
+				.reader
+				.get(
+					self.module.header.interpretation.literals,
+					&self.module.cache.literals,
+					vocabulary,
+					self.module.header.heap,
+					*r,
+				)?
+				.unwrap();
+
+			Ok(literal_entry.literal.0.clone())
+		})
+	}
+}
+
+pub struct DifferentFrom<'a> {
+	r: paged::Ref<'a, header::InterpretedResource, paged::UnboundSliceIter<Id>>,
+}
+
+impl<'a> Iterator for DifferentFrom<'a> {
+	type Item = Id;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.r.next().map(|id| *id)
+	}
+}
+
+pub struct Resources<'a, V: Vocabulary, R> {
+	module: &'a Module<V, R>,
+	r: paged::Iter<'a, 'a, R, header::InterpretedResource>,
+}
+
+impl<'a, V: Vocabulary, R: io::Seek + io::Read> Iterator for Resources<'a, V, R> {
+	type Item = Result<(Id, Resource<'a, V, R>), Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.r.next().map(|r| {
+			r.map(|r| {
+				(
+					r.id,
+					Resource {
+						module: self.module,
+						r,
+					},
+				)
+			})
+		})
 	}
 }

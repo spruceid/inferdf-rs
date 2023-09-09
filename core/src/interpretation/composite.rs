@@ -35,7 +35,7 @@ pub trait Dependencies<V: Vocabulary> {
 #[derivative(Default(bound = ""))]
 pub struct Interpretation<V: Vocabulary> {
 	/// Final interpretation.
-	interpretation: local::LocalInterpretation<V>,
+	interpretation: local::Interpretation<V>,
 
 	/// Interfaces with dependency interpretations.
 	interfaces: HashMap<usize, Interface>,
@@ -46,7 +46,7 @@ impl<V: Vocabulary> Interpretation<V> {
 		Self::default()
 	}
 
-	pub fn local_interpretation(&self) -> &local::LocalInterpretation<V> {
+	pub fn local_interpretation(&self) -> &local::Interpretation<V> {
 		&self.interpretation
 	}
 

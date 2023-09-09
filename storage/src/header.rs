@@ -1,111 +1,326 @@
-use std::io::{self, Read, Write};
+mod tag;
+mod version;
 
-use crate::{decode, encode::StaticEncodedLen, page, Decode, Encode, HEADER_TAG, VERSION};
+use std::io;
 
-pub struct Header {
+use educe::Educe;
+use inferdf_core::{class, Cause, Class, DivCeil, Signed};
+use iref::IriBuf;
+use langtag::LanguageTagBuf;
+use paged::{
+	cache::UnboundRef, encode_string_on_heap, Encode, EncodeSized, HeapSection, Paged, Section,
+	UnboundSliceIter,
+};
+use rdf_types::{
+	literal, IriVocabulary, IriVocabularyMut, Literal, LiteralVocabulary, Vocabulary, VocabularyMut,
+};
+pub use tag::Tag;
+pub use version::Version;
+
+use inferdf_core::Id;
+
+#[derive(Paged)]
+pub struct Header<V: Vocabulary> {
 	pub tag: Tag,
 	pub version: Version,
 	pub page_size: u32,
-	pub iri_count: u32,
-	pub iri_page_count: u32,
-	pub literal_count: u32,
-	pub literal_page_count: u32,
-	pub resource_count: u32,
-	pub resource_page_count: u32,
-	pub named_graph_count: u32,
-	pub named_graph_page_count: u32,
-	pub default_graph: page::graphs::Description,
+	pub interpretation: Interpretation<V>,
+	pub dataset: Dataset,
+	pub classification: Classification,
+	pub heap: HeapSection,
 }
 
-impl StaticEncodedLen for Header {
-	const ENCODED_LEN: u32 =
-		Tag::ENCODED_LEN + Version::ENCODED_LEN + 4 * 9 + page::graphs::Description::ENCODED_LEN;
-}
-
-/// Header tag, used to recognize the file format.
-pub struct Tag;
-
-impl StaticEncodedLen for Tag {
-	const ENCODED_LEN: u32 = 4;
-}
-
-/// Version number.
-pub struct Version;
-
-impl StaticEncodedLen for Version {
-	const ENCODED_LEN: u32 = 4;
-}
-
-impl Encode for Header {
-	fn encode(&self, output: &mut impl Write) -> Result<u32, io::Error> {
-		self.tag.encode(output)?;
-		self.version.encode(output)?;
-		self.page_size.encode(output)?;
-		self.iri_count.encode(output)?;
-		self.iri_page_count.encode(output)?;
-		self.literal_count.encode(output)?;
-		self.literal_page_count.encode(output)?;
-		self.resource_count.encode(output)?;
-		self.resource_page_count.encode(output)?;
-		self.named_graph_count.encode(output)?;
-		self.named_graph_page_count.encode(output)?;
-		self.default_graph.encode(output)?;
-		Ok(Self::ENCODED_LEN)
+impl<V: Vocabulary> Header<V> {
+	pub fn first_page_offset(&self) -> u32 {
+		DivCeil::div_ceil(Self::ENCODED_SIZE, self.page_size) * self.page_size
 	}
 }
 
-impl Decode for Header {
-	fn decode(input: &mut impl Read) -> Result<Self, decode::Error> {
-		Ok(Self {
-			tag: Tag::decode(input)?,
-			version: Version::decode(input)?,
-			page_size: u32::decode(input)?,
-			iri_count: u32::decode(input)?,
-			iri_page_count: u32::decode(input)?,
-			literal_count: u32::decode(input)?,
-			literal_page_count: u32::decode(input)?,
-			resource_count: u32::decode(input)?,
-			resource_page_count: u32::decode(input)?,
-			named_graph_count: u32::decode(input)?,
-			named_graph_page_count: u32::decode(input)?,
-			default_graph: page::graphs::Description::decode(input)?,
-		})
+#[derive(Paged)]
+pub struct Interpretation<V: Vocabulary> {
+	pub iris: Section<IriEntry<V>>,
+	pub literals: Section<LiteralEntry<V>>,
+	pub resources: Section<InterpretedResource>,
+}
+
+#[derive(Paged)]
+#[paged(context(V), heap, decode_bounds(V: IriVocabularyMut))]
+pub struct IriEntry<V: IriVocabulary> {
+	pub iri: EncodedIri<V>,
+	pub interpretation: Id,
+}
+
+#[derive(Educe)]
+#[educe(Clone(bound = "V::Iri: Clone"))]
+pub struct EncodedIri<V: IriVocabulary>(pub V::Iri);
+
+impl<V: IriVocabulary> paged::EncodeSized for EncodedIri<V> {
+	const ENCODED_SIZE: u32 = paged::heap::Entry::ENCODED_SIZE;
+}
+
+impl<V: IriVocabulary> paged::EncodeOnHeap<V> for EncodedIri<V> {
+	fn encode_on_heap(
+		&self,
+		context: &V,
+		heap: &mut paged::Heap,
+		output: &mut impl std::io::Write,
+	) -> std::io::Result<u32> {
+		let value = context.iri(&self.0).unwrap().as_str();
+		let offset = heap.insert(context, value)?;
+		offset.sized(value.len() as u32).encode(context, output)
 	}
 }
 
-impl Encode for Tag {
-	fn encode(&self, output: &mut impl Write) -> Result<u32, io::Error> {
-		output.write_all(&HEADER_TAG)?;
-		Ok(Self::ENCODED_LEN)
+impl<V: IriVocabularyMut> paged::DecodeFromHeap<V> for EncodedIri<V> {
+	fn decode_from_heap<R: io::Seek + io::Read>(
+		input: &mut paged::reader::Cursor<R>,
+		context: &mut V,
+		heap: HeapSection,
+	) -> io::Result<Self> {
+		let string = String::decode_from_heap(input, context, heap)?;
+		let iri = IriBuf::new(string).map_err(|_| io::ErrorKind::InvalidData)?;
+		Ok(Self(context.insert_owned(iri)))
 	}
 }
 
-impl Decode for Tag {
-	fn decode(input: &mut impl Read) -> Result<Self, decode::Error> {
-		let mut buf = [0u8; 4];
-		input.read_exact(&mut buf)?;
-		if buf == HEADER_TAG {
-			Ok(Self)
-		} else {
-			Err(decode::Error::InvalidTag)
+#[derive(Paged)]
+#[paged(
+	context(V),
+	heap,
+	bounds(V: Vocabulary + LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>),
+	encode_bounds(V::Value: AsRef<str>),
+	decode_bounds(V: VocabularyMut, V::Value: From<String>)
+)]
+pub struct LiteralEntry<V: LiteralVocabulary> {
+	pub literal: EncodedLiteral<V>,
+	pub interpretation: Id,
+}
+
+#[derive(Educe)]
+#[educe(Clone(bound = "V::Literal: Clone"))]
+pub struct EncodedLiteral<V: LiteralVocabulary>(pub V::Literal);
+
+impl<V: LiteralVocabulary> paged::EncodeSized for EncodedLiteral<V> {
+	const ENCODED_SIZE: u32 =
+		paged::heap::Entry::ENCODED_SIZE + 1 + paged::heap::Entry::ENCODED_SIZE;
+}
+
+impl<V: Vocabulary> paged::EncodeOnHeap<V> for EncodedLiteral<V>
+where
+	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
+	V::Value: AsRef<str>,
+{
+	fn encode_on_heap(
+		&self,
+		context: &V,
+		heap: &mut paged::Heap,
+		output: &mut impl std::io::Write,
+	) -> std::io::Result<u32> {
+		let lit = context.literal(&self.0).unwrap();
+		encode_string_on_heap(heap, output, lit.value().as_ref())?;
+		match lit.type_() {
+			literal::Type::Any(i) => {
+				let iri = context.iri(i).unwrap();
+				0u8.encode(context, output)?;
+				encode_string_on_heap(heap, output, iri.as_str())?;
+				Ok(Self::ENCODED_SIZE)
+			}
+			literal::Type::LangString(t) => {
+				let tag = context.language_tag(t).unwrap();
+				1u8.encode(context, output)?;
+				encode_string_on_heap(heap, output, tag.as_str())?;
+				Ok(Self::ENCODED_SIZE)
+			}
 		}
 	}
 }
 
-impl Encode for Version {
-	fn encode(&self, output: &mut impl Write) -> Result<u32, io::Error> {
-		VERSION.encode(output)?;
-		Ok(Self::ENCODED_LEN)
+impl<V: VocabularyMut> paged::DecodeFromHeap<V> for EncodedLiteral<V>
+where
+	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
+	V::Value: From<String>,
+{
+	fn decode_from_heap<R: io::Seek + io::Read>(
+		input: &mut paged::reader::Cursor<R>,
+		context: &mut V,
+		heap: HeapSection,
+	) -> io::Result<Self> {
+		use paged::Decode;
+		let value = String::decode_from_heap(input, context, heap)?;
+		let discriminant = u8::decode(input, context)?;
+		let type_ = match discriminant {
+			0u8 => {
+				let iri = IriBuf::new(String::decode_from_heap(input, context, heap)?)
+					.map_err(|_| io::ErrorKind::InvalidData)?;
+				literal::Type::Any(context.insert_owned(iri))
+			}
+			1u8 => {
+				let tag = LanguageTagBuf::new(
+					String::decode_from_heap(input, context, heap)?.into_bytes(),
+				)
+				.map_err(|_| io::ErrorKind::InvalidData)?;
+				literal::Type::LangString(context.insert_owned_language_tag(tag))
+			}
+			_ => return Err(io::ErrorKind::InvalidData.into()),
+		};
+		Ok(Self(
+			context.insert_owned_literal(Literal::new(value.into(), type_)),
+		))
 	}
 }
 
-impl Decode for Version {
-	fn decode(input: &mut impl Read) -> Result<Self, decode::Error> {
-		let v = u32::decode(input)?;
-		if v == VERSION {
-			Ok(Self)
-		} else {
-			Err(decode::Error::UnsupportedVersion(v))
-		}
+#[derive(Paged)]
+#[paged(heap)]
+pub struct InterpretedResource {
+	pub id: Id,
+	pub iris: Vec<u32>,
+	pub literals: Vec<u32>,
+	pub ne: Vec<Id>,
+	pub class: Class,
+}
+
+pub struct InterpretationResourceIrisBinder;
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<InterpretedResource>, UnboundSliceIter<u32>>
+	for InterpretationResourceIrisBinder
+{
+	fn bind<'t>(self, t: &'t InterpretedResource) -> std::slice::Iter<'t, u32>
+	where
+		'a: 't,
+	{
+		t.iris.iter()
 	}
+}
+
+pub struct InterpretationResourceLiteralsBinder;
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<InterpretedResource>, UnboundSliceIter<u32>>
+	for InterpretationResourceLiteralsBinder
+{
+	fn bind<'t>(self, t: &'t InterpretedResource) -> std::slice::Iter<'t, u32>
+	where
+		'a: 't,
+	{
+		t.literals.iter()
+	}
+}
+
+pub struct InterpretationResourceNeBinder;
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<InterpretedResource>, UnboundSliceIter<Id>>
+	for InterpretationResourceNeBinder
+{
+	fn bind<'t>(self, t: &'t InterpretedResource) -> std::slice::Iter<'t, Id>
+	where
+		'a: 't,
+	{
+		t.ne.iter()
+	}
+}
+
+#[derive(Paged)]
+pub struct Dataset {
+	pub default_graph: GraphDescription,
+	pub named_graphs: Section<Graph>,
+}
+
+#[derive(Paged)]
+pub struct Graph {
+	pub id: Id,
+	pub description: GraphDescription,
+}
+
+#[derive(Clone, Copy, Paged)]
+pub struct GraphDescription {
+	pub facts: Section<GraphFact>,
+	pub resources: Section<GraphResource>,
+}
+
+#[derive(Clone, Copy, Paged)]
+pub struct Triple(pub Id, pub Id, pub Id);
+
+impl From<Triple> for inferdf_core::Triple {
+	fn from(value: Triple) -> Self {
+		Self(value.0, value.1, value.2)
+	}
+}
+
+#[derive(Clone, Copy, Paged)]
+pub struct GraphFact {
+	pub triple: Signed<Triple>,
+	pub cause: Cause,
+}
+
+impl From<GraphFact> for inferdf_core::GraphFact {
+	fn from(value: GraphFact) -> Self {
+		Self::new(value.triple.cast(), value.cause)
+	}
+}
+
+#[derive(Paged)]
+#[paged(heap)]
+pub struct GraphResource {
+	pub id: Id,
+	pub as_subject: Vec<u32>,
+	pub as_predicate: Vec<u32>,
+	pub as_object: Vec<u32>,
+}
+
+pub struct GraphResourceAsSubjectBinder;
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<GraphResource>, UnboundSliceIter<u32>>
+	for GraphResourceAsSubjectBinder
+{
+	fn bind<'t>(self, t: &'t GraphResource) -> std::slice::Iter<'t, u32>
+	where
+		'a: 't,
+	{
+		t.as_subject.iter()
+	}
+}
+
+pub struct GraphResourceAsPredicateBinder;
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<GraphResource>, UnboundSliceIter<u32>>
+	for GraphResourceAsPredicateBinder
+{
+	fn bind<'t>(self, t: &'t GraphResource) -> std::slice::Iter<'t, u32>
+	where
+		'a: 't,
+	{
+		t.as_predicate.iter()
+	}
+}
+
+pub struct GraphResourceAsObjectBinder;
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<GraphResource>, UnboundSliceIter<u32>>
+	for GraphResourceAsObjectBinder
+{
+	fn bind<'t>(self, t: &'t GraphResource) -> std::slice::Iter<'t, u32>
+	where
+		'a: 't,
+	{
+		t.as_object.iter()
+	}
+}
+
+#[derive(Paged)]
+pub struct Classification {
+	pub groups: Section<Group>,
+	pub representatives: Section<Representative>,
+}
+
+#[derive(Paged)]
+#[paged(heap)]
+pub struct Group {
+	pub layer: u32,
+	pub description: class::group::Description,
+	pub index: u32,
+}
+
+#[derive(Paged)]
+pub struct Representative {
+	pub class: Class,
+	pub resource: Id,
 }

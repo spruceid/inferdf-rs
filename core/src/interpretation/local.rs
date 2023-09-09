@@ -1,25 +1,25 @@
-use std::hash::Hash;
+use std::{hash::Hash, ops::Deref};
 
 use derivative::Derivative;
 use hashbrown::{HashMap, HashSet};
 use rdf_types::{LiteralVocabulary, Vocabulary};
 use slab::Slab;
 
-use crate::{uninterpreted, Id, Quad, Triple};
+use crate::{uninterpreted, Id, Quad, Triple, class::classification};
 
 use super::{Contradiction, InterpretationMut};
 
 /// RDF interpretation.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct LocalInterpretation<V: Vocabulary> {
+pub struct Interpretation<V: Vocabulary> {
 	resources: Slab<Resource<V>>,
 	by_iri: HashMap<V::Iri, Id>,
 	by_blank: HashMap<V::BlankId, Id>,
 	by_literal: HashMap<V::Literal, Id>,
 }
 
-impl<'a, V: Vocabulary> InterpretationMut<'a, V> for LocalInterpretation<V>
+impl<'a, V: Vocabulary> InterpretationMut<'a, V> for Interpretation<V>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,
@@ -93,7 +93,11 @@ impl<V: Vocabulary> Resource<V> {
 
 pub type ResourceLiteralInstances<V> = HashMap<<V as LiteralVocabulary>::Literal, Id>;
 
-impl<V: Vocabulary> LocalInterpretation<V> {
+impl<V: Vocabulary> Interpretation<V> {
+	pub fn with_classification(self, classification: classification::Local) -> WithClassification<V> {
+		WithClassification::new(self, classification)
+	}
+
 	pub fn terms_of(&self, id: Id) -> TermsOf<V>
 	where
 		V::Iri: Copy,
@@ -350,5 +354,34 @@ where
 					.next()
 					.map(|literal| uninterpreted::Term::<V>::Literal(*literal))
 			})
+	}
+}
+
+pub struct WithClassification<V: Vocabulary> {
+	interpretation: Interpretation<V>,
+	classification: classification::Local
+}
+
+impl<V: Vocabulary> WithClassification<V> {
+	pub fn new(
+		interpretation: Interpretation<V>,
+		classification: classification::Local
+	) -> Self {
+		Self {
+			interpretation,
+			classification
+		}
+	}
+	
+	pub fn classification(&self) -> &classification::Local {
+		&self.classification
+	}
+}
+
+impl<V: Vocabulary> Deref for WithClassification<V> {
+	type Target = Interpretation<V>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.interpretation
 	}
 }

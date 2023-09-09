@@ -6,12 +6,12 @@ use inferdf_core::{
 
 use crate::{builder::class::ResourceNode, utils::scc::Components};
 
-use super::{LayerClass, LayerGroups, Node};
+use super::{LayerClass, LayerGroupsBuilder, Node};
 
 pub(crate) fn compute_component(
 	components: &Components<Node>,
 	classes: &HashMap<Id, Class>,
-	new_groups: &mut LayerGroups,
+	new_groups: &mut LayerGroupsBuilder,
 	new_classes: &mut HashMap<Id, LayerClass>,
 	c: usize,
 ) {

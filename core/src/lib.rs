@@ -1,17 +1,21 @@
+mod id;
 pub mod cause;
 pub mod class;
 pub mod dataset;
 pub mod interpretation;
 pub mod pattern;
 pub mod uninterpreted;
+pub mod module;
 mod utils;
 
+pub use id::*;
 pub use cause::*;
+pub use class::{Class, Classification};
 pub use dataset::Dataset;
 pub use interpretation::Interpretation;
 use locspan::Meta;
 pub use pattern::Pattern;
-use rdf_types::Vocabulary;
+pub use module::Module;
 pub use utils::*;
 
 pub type Triple = rdf_types::Triple<Id, Id, Id>;
@@ -20,20 +24,6 @@ pub type Quad = rdf_types::Quad<Id, Id, Id, Id>;
 pub type GraphFact = Meta<Signed<Triple>, Cause>;
 pub type Fact = Meta<Signed<Quad>, Cause>;
 
-pub trait Module<V: Vocabulary> {
-	type Error;
-	type Dataset<'a>: Dataset<'a, Error = Self::Error>
-	where
-		Self: 'a;
-	type Interpretation<'a>: Interpretation<'a, V, Error = Self::Error>
-	where
-		Self: 'a;
-
-	fn dataset(&self) -> Self::Dataset<'_>;
-
-	fn interpretation(&self) -> Self::Interpretation<'_>;
-}
-
 pub trait TripleExt {
 	fn into_pattern(self) -> Pattern;
 }
@@ -41,26 +31,5 @@ pub trait TripleExt {
 impl TripleExt for Triple {
 	fn into_pattern(self) -> Pattern {
 		rdf_types::Triple(self.0.into(), self.1.into(), self.2.into())
-	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Id(u32);
-
-impl Id {
-	pub fn index(&self) -> usize {
-		self.0 as usize
-	}
-}
-
-impl From<u32> for Id {
-	fn from(value: u32) -> Self {
-		Self(value)
-	}
-}
-
-impl From<Id> for u32 {
-	fn from(value: Id) -> Self {
-		value.0
 	}
 }
