@@ -6,7 +6,7 @@ use std::hash::Hash;
 use hashbrown::{HashMap, HashSet};
 use indexmap::IndexSet;
 use inferdf_core::{
-	class::{self, Class, classification},
+	class::{self, classification, Class},
 	Id, Module, Signed,
 };
 use locspan::Meta;

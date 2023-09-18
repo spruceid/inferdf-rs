@@ -4,7 +4,7 @@ use educe::Educe;
 use inferdf_core::{Id, IteratorWith};
 use iref::Iri;
 use langtag::LanguageTag;
-use paged::no_context_mut;
+use paged::{no_context_mut, ContextualIterator};
 use rdf_types::{literal, IriVocabularyMut, Literal, LiteralVocabulary, Vocabulary, VocabularyMut};
 
 use crate::header;
@@ -18,12 +18,8 @@ pub struct Interpretation<'a, V: Vocabulary, R> {
 }
 
 impl<'a, V: Vocabulary, R> Interpretation<'a, V, R> {
-	pub(crate) fn new(
-		module: &'a Module<V, R>,
-	) -> Self {
-		Self {
-			module
-		}
+	pub(crate) fn new(module: &'a Module<V, R>) -> Self {
+		Self { module }
 	}
 }
 
@@ -40,6 +36,10 @@ where
 	type Resource = Resource<'a, V, R>;
 
 	type Resources = Resources<'a, V, R>;
+
+	type Iris = Iris<'a, V, R>;
+
+	type Literals = Literals<'a, V, R>;
 
 	fn resources(&self) -> Result<Self::Resources, Self::Error> {
 		Ok(Resources {
@@ -69,6 +69,16 @@ where
 			}))
 	}
 
+	fn iris(&self) -> Result<Self::Iris, Self::Error> {
+		Ok(Iris {
+			r: self.module.reader.iter(
+				self.module.header.interpretation.iris,
+				&self.module.cache.iris,
+				self.module.header.heap
+			)
+		})
+	}
+
 	fn iri_interpretation(
 		&self,
 		vocabulary: &mut V,
@@ -87,6 +97,16 @@ where
 		)?;
 
 		Ok(entry.map(|e| e.interpretation))
+	}
+
+	fn literals(&self) -> Result<Self::Literals, Self::Error> {
+		Ok(Literals {
+			r: self.module.reader.iter(
+				self.module.header.interpretation.literals,
+				&self.module.cache.literals,
+				self.module.header.heap
+			)
+		})
 	}
 
 	fn literal_interpretation(
@@ -144,21 +164,21 @@ where
 {
 	type Error = Error;
 
-	type Iris = Iris<'a, V, R>;
+	type Iris = ResourceIris<'a, V, R>;
 
-	type Literals = Literals<'a, V, R>;
+	type Literals = ResourceLiterals<'a, V, R>;
 
 	type DifferentFrom = DifferentFrom<'a>;
 
 	fn as_iri(&self) -> Self::Iris {
-		Iris {
+		ResourceIris {
 			module: self.module,
 			r: self.r.clone().map(header::InterpretationResourceIrisBinder),
 		}
 	}
 
 	fn as_literal(&self) -> Self::Literals {
-		Literals {
+		ResourceLiterals {
 			module: self.module,
 			r: self
 				.r
@@ -174,13 +194,13 @@ where
 	}
 }
 
-pub struct Iris<'a, V: Vocabulary, R> {
+pub struct ResourceIris<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
 	r: paged::Ref<'a, header::InterpretedResource, paged::UnboundSliceIter<u32>>,
 }
 
 impl<'a, V: Vocabulary + IriVocabularyMut, R: io::Seek + io::Read> IteratorWith<V>
-	for Iris<'a, V, R>
+	for ResourceIris<'a, V, R>
 where
 	V::Iri: Clone,
 {
@@ -205,12 +225,12 @@ where
 	}
 }
 
-pub struct Literals<'a, V: Vocabulary, R> {
+pub struct ResourceLiterals<'a, V: Vocabulary, R> {
 	module: &'a Module<V, R>,
 	r: paged::Ref<'a, header::InterpretedResource, paged::UnboundSliceIter<u32>>,
 }
 
-impl<'a, V: VocabularyMut, R: io::Seek + io::Read> IteratorWith<V> for Literals<'a, V, R>
+impl<'a, V: VocabularyMut, R: io::Seek + io::Read> IteratorWith<V> for ResourceLiterals<'a, V, R>
 where
 	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
 	V::Literal: Clone,
@@ -242,10 +262,18 @@ pub struct DifferentFrom<'a> {
 }
 
 impl<'a> Iterator for DifferentFrom<'a> {
-	type Item = Id;
+	type Item = Result<Id, Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.r.next().map(|id| *id)
+		self.r.next().map(|id| Ok(*id))
+	}
+}
+
+impl<'a, V> IteratorWith<V> for DifferentFrom<'a> {
+	type Item = Result<Id, Error>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
 	}
 }
 
@@ -269,5 +297,49 @@ impl<'a, V: Vocabulary, R: io::Seek + io::Read> Iterator for Resources<'a, V, R>
 				)
 			})
 		})
+	}
+}
+
+impl<'a, V: Vocabulary, R: io::Seek + io::Read> IteratorWith<V> for Resources<'a, V, R> {
+	type Item = Result<(Id, Resource<'a, V, R>), Error>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}
+
+pub struct Iris<'a, V: Vocabulary, R> {
+	r: paged::Iter<'a, 'a, R, header::IriEntry<V>>,
+}
+
+impl<'a, V: Vocabulary + IriVocabularyMut, R: io::Seek + io::Read> IteratorWith<V> for Iris<'a, V, R>
+where
+	V::Iri: Clone
+{
+	type Item = Result<(V::Iri, Id), Error>;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
+		self.r.next_with(vocabulary).map(|r| r.map(|entry| {
+			(entry.iri.0.clone(), entry.interpretation)
+		}))
+	}
+}
+
+pub struct Literals<'a, V: Vocabulary, R> {
+	r: paged::Iter<'a, 'a, R, header::LiteralEntry<V>>,
+}
+
+impl<'a, V: VocabularyMut, R: io::Seek + io::Read> IteratorWith<V> for Literals<'a, V, R>
+where
+	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
+	V::Literal: Clone,
+	V::Value: From<String>
+{
+	type Item = Result<(V::Literal, Id), Error>;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
+		self.r.next_with(vocabulary).map(|r| r.map(|entry| {
+			(entry.literal.0.clone(), entry.interpretation)
+		}))
 	}
 }

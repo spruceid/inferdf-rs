@@ -8,7 +8,9 @@ use crate::{
 	Id, ReplaceId,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged, Serialize, Deserialize)]
+#[derive(
+	Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged, Serialize, Deserialize,
+)]
 #[paged(
 	context(C),
 	bounds(T: paged::EncodeSized),
@@ -109,7 +111,9 @@ impl<T: Instantiate> Instantiate for Signed<T> {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged, Serialize, Deserialize)]
+#[derive(
+	Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged, Serialize, Deserialize,
+)]
 pub enum Sign {
 	Positive,
 	Negative,

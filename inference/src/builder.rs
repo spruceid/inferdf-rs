@@ -4,18 +4,19 @@ use rdf_types::Vocabulary;
 use std::hash::Hash;
 
 use inferdf_core::{
-	dataset::{self, Dataset},
-	interpretation::{self, composite, InterpretationMut},
-	uninterpreted, Entailment, Fact, Id, Module, Quad, ReplaceId, Sign, Signed, TryCollect, module::composition::SubModule, Triple,
+	dataset,
+	interpretation::{self, InterpretationMut},
+	module::{sub_module::SubModuleError, SubModule},
+	uninterpreted, Entailment, Fact, Id, IteratorWith, Module, Quad, ReplaceId, Sign, Signed,
 };
 
 use crate::semantics::{inference::rule::TripleStatement, Context, MaybeTrusted, Semantics};
 
 mod class;
-// mod context;
+mod context;
 // mod dependency;
 
-// pub use context::*;
+pub use context::*;
 // pub use dependency::*;
 
 #[derive(Debug, thiserror::Error)]
@@ -55,6 +56,71 @@ impl ReplaceId for QuadStatement {
 	}
 }
 
+pub struct BuilderInterpretation<V: Vocabulary, D> {
+	dependency: SubModule<V, D>,
+	interpretation: interpretation::Local<V>,
+}
+
+impl<V: Vocabulary, D> BuilderInterpretation<V, D> {
+	pub fn new(dependency: D) -> Self {
+		Self {
+			dependency: SubModule::new(dependency),
+			interpretation: interpretation::Local::new(),
+		}
+	}
+
+	pub fn into_builder<S>(self, semantics: S) -> Builder<V, D, S> {
+		Builder {
+			dependency: self.dependency,
+			interpretation: self.interpretation,
+			dataset: dataset::LocalDataset::new(),
+			semantics,
+			entailments: IndexSet::new(),
+			to_check: Vec::new(),
+		}
+	}
+}
+
+impl<'a, V: Vocabulary, D: Module<V>> InterpretationMut<'a, V> for BuilderInterpretation<V, D>
+where
+	V::Iri: Copy + Eq + Hash,
+	V::BlankId: Copy + Eq + Hash,
+	V::Literal: Copy + Eq + Hash,
+{
+	type Error = D::Error;
+
+	fn insert_term(
+		&mut self,
+		vocabulary: &mut V,
+		term: uninterpreted::Term<V>,
+	) -> Result<Id, Self::Error> {
+		use inferdf_core::Interpretation;
+		if term.is_blank() {
+			Ok(self.interpretation.insert_term(term))
+		} else {
+			match self
+				.dependency
+				.module()
+				.interpretation()
+				.term_interpretation(vocabulary, term)?
+			{
+				Some(dep_id) => {
+					let global_id = self
+						.dependency
+						.interface()
+						.get_or_insert_global(dep_id, || self.interpretation.insert_term(term));
+					self.interpretation
+						.get_mut(global_id)
+						.unwrap()
+						.add_term(term);
+					Ok(global_id)
+				}
+				None => Ok(self.interpretation.insert_term(term)),
+			}
+		}
+	}
+}
+
 pub struct Builder<V: Vocabulary, D, S> {
 	dependency: SubModule<V, D>,
 	interpretation: interpretation::Local<V>,
@@ -65,14 +131,10 @@ pub struct Builder<V: Vocabulary, D, S> {
 }
 
 impl<V: Vocabulary, D, S> Builder<V, D, S> {
-	pub fn new(
-		dependency: D,
-		interpretation: interpretation::Local<V>,
-		semantics: S,
-	) -> Self {
+	pub fn new(dependency: D, semantics: S) -> Self {
 		Self {
 			dependency: SubModule::new(dependency),
-			interpretation,
+			interpretation: interpretation::Local::new(),
 			dataset: dataset::LocalDataset::new(),
 			semantics,
 			entailments: IndexSet::new(),
@@ -99,19 +161,21 @@ impl<V: Vocabulary, D, S> Builder<V, D, S> {
 			.map(|(i, e)| (i as u32, e))
 	}
 
-	pub fn check(&mut self) -> Result<(), MissingStatement> {
-		// let context = BuilderContext::new(&mut self.interpretation, &self.data);
+	pub fn check(&mut self, vocabulary: &mut V) -> Result<(), MissingStatement>
+	where
+		D: Module<V>,
+	{
+		let context = BuilderContext::new(&self.dependency, &self.interpretation, &self.dataset);
 		for Meta(Signed(sign, statement), cause) in std::mem::take(&mut self.to_check) {
 			match statement {
 				TripleStatement::Triple(triple) => {
-					// if context
-					// 	.pattern_matching(Signed(sign, triple.into()))
-					// 	.next()
-					// 	.is_none()
-					// {
-					// 	return Err(MissingStatement(Signed(sign, statement), cause));
-					// }
-					todo!()
+					if context
+						.pattern_matching(Signed(sign, triple.into()))
+						.next_with(vocabulary)
+						.is_none()
+					{
+						return Err(MissingStatement(Signed(sign, statement), cause));
+					}
 				}
 				TripleStatement::Eq(_, _) => {
 					todo!()
@@ -155,7 +219,30 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
-		todo!()
+		use inferdf_core::Interpretation;
+		if term.is_blank() {
+			Ok(self.interpretation.insert_term(term))
+		} else {
+			match self
+				.dependency
+				.module()
+				.interpretation()
+				.term_interpretation(vocabulary, term)?
+			{
+				Some(dep_id) => {
+					let global_id = self
+						.dependency
+						.interface()
+						.get_or_insert_global(dep_id, || self.interpretation.insert_term(term));
+					self.interpretation
+						.get_mut(global_id)
+						.unwrap()
+						.add_term(term);
+					Ok(global_id)
+				}
+				None => Ok(self.interpretation.insert_term(term)),
+			}
+		}
 	}
 
 	pub fn insert_quad(
@@ -172,51 +259,48 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 			self.insert_term(vocabulary, quad.0)?,
 			self.insert_term(vocabulary, quad.1)?,
 			self.insert_term(vocabulary, quad.2)?,
-			quad.3.map(|g| self.insert_term(vocabulary, g)).transpose()?
+			quad.3
+				.map(|g| self.insert_term(vocabulary, g))
+				.transpose()?,
 		))
 	}
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub enum Error {
-	Contradiction(Contradiction)
+pub enum Error<D> {
+	Contradiction(Contradiction),
+	Dependency(D),
 }
 
-impl From<dataset::Contradiction> for Error {
+impl<D> From<dataset::Contradiction> for Error<D> {
 	fn from(value: dataset::Contradiction) -> Self {
 		Self::Contradiction(value.into())
 	}
 }
 
-impl From<interpretation::Contradiction> for Error {
+impl<D> From<interpretation::Contradiction> for Error<D> {
 	fn from(value: interpretation::Contradiction) -> Self {
 		Self::Contradiction(value.into())
 	}
 }
 
+impl<D> From<SubModuleError<D>> for Error<D> {
+	fn from(value: SubModuleError<D>) -> Self {
+		match value {
+			SubModuleError::Module(e) => Error::Dependency(e),
+			SubModuleError::Contradiction(c) => Error::Contradiction(c.into()),
+		}
+	}
+}
+
 impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
-	fn filter_new_triple(
-		&self,
-		triple: Triple,
-		sign: Sign
-	) -> Result<bool, Error> {
-		todo!()
-	}
-
-	fn insert_unchecked(
-		&mut self,
-		Meta(Signed(sign, quad), cause): Fact,
-	) -> Result<(), Error> {
-		todo!()
-	}
-
 	/// Insert a new quad in the module's dataset.
 	pub fn insert(
 		&mut self,
 		vocabulary: &mut V,
 		Meta(Signed(sign, quad), cause): Fact,
-	) -> Result<(), Error>
+	) -> Result<(), Error<D::Error>>
 	where
 		V::Iri: Copy + Eq + Hash,
 		V::BlankId: Copy + Eq + Hash,
@@ -228,63 +312,60 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 			match statement {
 				Signed(sign, QuadStatement::Quad(quad)) => {
 					let (triple, g) = quad.into_triple();
-					if self.filter_new_triple(triple, sign)? {
-						self.insert_unchecked(Meta(Signed(sign, quad), cause))?;
+					if self.dependency.filter_triple(vocabulary, triple, sign)? {
+						let (_, _, inserted) =
+							self.dataset.insert(Meta(Signed(sign, quad), cause))?;
 
-						// let mut context =
-						// 	BuilderContext::new(&mut self.interpretation, &self.data);
-						self.semantics
-							.deduce(
-								&mut context,
-								Signed(sign, triple),
-								|e| self.entailments.insert_full(e).0 as u32,
-								|Meta(statement, cause)| match statement {
-									MaybeTrusted::Trusted(Signed(sign, statement)) => stack
-										.push(Meta(
-											Signed(sign, statement.with_graph(g)),
-											cause,
-										)),
-									MaybeTrusted::Untrusted(signed_statement) => {
-										self.to_check.push(Meta(
-											signed_statement,
-											cause.into_entailed().unwrap(),
-										))
-									}
-								},
-							)?
+						if inserted {
+							let mut context = BuilderContext::new(
+								&self.dependency,
+								&self.interpretation,
+								&self.dataset,
+							);
+							self.semantics
+								.deduce(
+									vocabulary,
+									&mut context,
+									Signed(sign, triple),
+									|e| self.entailments.insert_full(e).0 as u32,
+									|Meta(statement, cause)| match statement {
+										MaybeTrusted::Trusted(Signed(sign, statement)) => stack
+											.push(Meta(
+												Signed(sign, statement.with_graph(g)),
+												cause,
+											)),
+										MaybeTrusted::Untrusted(signed_statement) => {
+											self.to_check.push(Meta(
+												signed_statement,
+												cause.into_entailed().unwrap(),
+											))
+										}
+									},
+								)
+								.map_err(Error::Dependency)?;
+							context.end().apply(&mut self.interpretation).unwrap()
+						}
 					}
 				}
 				Signed(Sign::Positive, QuadStatement::Eq(a, b, g)) => {
 					let (a, b) = self.interpretation.merge(a, b)?;
-					self.data
-						.set
+					self.dataset
 						.replace_id(b, a, |Meta(Signed(sign, triple), _)| {
-							self.data
-								.dependencies
-								.filter(&self.interpretation, *triple, *sign)
+							self.dependency.filter_triple(vocabulary, *triple, *sign)
 						})?;
 					stack.replace_id(b, a);
 
-					for signed_quad in self
-						.data
-						.resource_facts(&self.interpretation, a)
-						.map_err(Error::Dependency)?
-					{
-						let (d, _, Meta(Signed(sign, quad), _)) =
-							signed_quad.map_err(Error::Dependency)?;
-						let triple = self
-							.interpretation
-							.import_triple(
-								vocabulary,
-								&self.data.dependencies,
-								d,
-								quad.into_triple().0,
-							)
-							.map_err(Error::Dependency)?;
-
-						let mut context = BuilderContext::new(&mut self.interpretation, &self.data);
+					for signed_quad in self.dataset.resource_facts(a) {
+						let Meta(Signed(sign, quad), _) = signed_quad;
+						let triple = quad.into_triple().0;
+						let mut context = BuilderContext::new(
+							&self.dependency,
+							&self.interpretation,
+							&self.dataset,
+						);
 						self.semantics
 							.deduce(
+								vocabulary,
 								&mut context,
 								Signed(sign, triple),
 								|e| self.entailments.insert_full(e).0 as u32,
@@ -300,6 +381,7 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 								},
 							)
 							.map_err(Error::Dependency)?;
+						context.end().apply(&mut self.interpretation).unwrap()
 					}
 				}
 				Signed(Sign::Negative, QuadStatement::Eq(a, b, _)) => {
@@ -311,72 +393,3 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics> Builder<V, D, S> {
 		Ok(())
 	}
 }
-
-// pub struct Data<V: Vocabulary, D: Module<V>> {
-// 	set: dataset::LocalDataset,
-// 	dependencies: Dependencies<V, D>,
-// }
-
-// impl<V: Vocabulary, D: Module<V>> Data<V, D> {
-// 	pub fn resource_facts(
-// 		&self,
-// 		interpretation: &composite::Interpretation<V>,
-// 		id: Id,
-// 	) -> Result<ResourceFacts<D::Dataset<'_>>, D::Error> {
-// 		let toplevel = self.set.resource_facts(id);
-// 		let dependencies = self
-// 			.dependencies
-// 			.iter()
-// 			.flat_map(move |(i, d)| {
-// 				interpretation
-// 					.dependency_ids(i, id)
-// 					.filter_map(move |local_id| {
-// 						let mut facts = d.dataset().resource_facts(local_id);
-// 						match facts.is_empty() {
-// 							Ok(true) => None,
-// 							Ok(false) => Some(Ok((i, local_id, facts))),
-// 							Err(e) => Some(Err(e)),
-// 						}
-// 					})
-// 			})
-// 			.try_collect()?;
-
-// 		Ok(ResourceFacts {
-// 			id,
-// 			toplevel,
-// 			dependencies,
-// 		})
-// 	}
-// }
-
-// /// Iterator over all the facts about the given resource, and the dependency it comes from.
-// ///
-// /// Facts are given in the dependency interpretation, not the top level interpretation.
-// pub struct ResourceFacts<'a, D: Dataset<'a>> {
-// 	id: Id,
-// 	toplevel: dataset::local::ResourceFacts<'a>,
-// 	dependencies: Vec<(usize, Id, dataset::ResourceFacts<'a, D>)>,
-// }
-
-// impl<'a, D: Dataset<'a>> Iterator for ResourceFacts<'a, D> {
-// 	type Item = Result<(Option<usize>, Id, Fact), D::Error>;
-
-// 	fn next(&mut self) -> Option<Self::Item> {
-// 		self.toplevel
-// 			.next()
-// 			.map(|fact| Ok((None, self.id, fact)))
-// 			.or_else(|| {
-// 				while let Some((d, local_id, facts)) = self.dependencies.last_mut() {
-// 					match facts.next() {
-// 						Some(Err(e)) => return Some(Err(e)),
-// 						Some(Ok((_, fact))) => return Some(Ok((Some(*d), *local_id, fact))),
-// 						None => {
-// 							self.dependencies.pop();
-// 						}
-// 					}
-// 				}
-
-// 				None
-// 			})
-// 	}
-// }

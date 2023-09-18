@@ -133,10 +133,10 @@ impl LocalDataset {
 		&mut self,
 		a: Id,
 		b: Id,
-		filter: impl Fn(&graph::Fact) -> Result<bool, E>,
+		mut filter: impl FnMut(&graph::Fact) -> Result<bool, E>,
 	) -> Result<(), E> {
 		for (_, graph) in self.graphs_mut() {
-			graph.replace_id(a, b, &filter)?
+			graph.replace_id(a, b, &mut filter)?
 		}
 
 		if let Some(graph) = self.named_graphs.remove(&b) {

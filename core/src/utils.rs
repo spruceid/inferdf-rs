@@ -44,10 +44,68 @@ pub trait FailibleIterator {
 	fn try_next(&mut self) -> Result<Option<Self::Item>, Self::Error>;
 }
 
-pub trait IteratorWith<V> {
+pub trait IteratorWith<V>: Sized {
 	type Item;
 
 	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item>;
+
+	fn find_with(
+		&mut self,
+		vocabulary: &mut V,
+		f: impl Fn(&Self::Item) -> bool,
+	) -> Option<Self::Item> {
+		while let Some(t) = self.next_with(vocabulary) {
+			if f(&t) {
+				return Some(t);
+			}
+		}
+
+		None
+	}
+
+	fn iter_with(self, vocabulary: &mut V) -> IterWith<Self, V> {
+		IterWith {
+			iter: self,
+			vocabulary,
+		}
+	}
+
+	fn map<F>(self, f: F) -> Map<Self, F> {
+		Map { inner: self, f }
+	}
+}
+
+pub struct IterWith<'a, I, V> {
+	iter: I,
+	vocabulary: &'a mut V,
+}
+
+impl<'a, I: IteratorWith<V>, V> Iterator for IterWith<'a, I, V> {
+	type Item = I::Item;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.iter.next_with(self.vocabulary)
+	}
+}
+
+pub struct Map<I, F> {
+	inner: I,
+	f: F,
+}
+
+impl<V, I: IteratorWith<V>, U, F: FnMut(I::Item) -> U> IteratorWith<V> for Map<I, F> {
+	type Item = U;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
+		self.inner.next_with(vocabulary).map(&mut self.f)
+	}
+}
+
+pub trait FailibleIteratorWith<V> {
+	type Item;
+	type Error;
+
+	fn try_next_with(&mut self, vocabulary: &mut V) -> Result<Option<Self::Item>, Self::Error>;
 }
 
 pub trait TryCollect {
@@ -65,6 +123,28 @@ impl<I: Iterator<Item = Result<J, E>>, J, E> TryCollect for I {
 		let mut result = Vec::new();
 
 		for item in self {
+			result.push(item?);
+		}
+
+		Ok(result)
+	}
+}
+
+pub trait TryCollectWith<V> {
+	type Item;
+	type Error;
+
+	fn try_collect_with(self, vocabulary: &mut V) -> Result<Vec<Self::Item>, Self::Error>;
+}
+
+impl<V, I: IteratorWith<V, Item = Result<J, E>>, J, E> TryCollectWith<V> for I {
+	type Item = J;
+	type Error = E;
+
+	fn try_collect_with(mut self, vocabulary: &mut V) -> Result<Vec<Self::Item>, Self::Error> {
+		let mut result = Vec::new();
+
+		while let Some(item) = self.next_with(vocabulary) {
 			result.push(item?);
 		}
 

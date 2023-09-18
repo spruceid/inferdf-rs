@@ -159,7 +159,9 @@ impl<V: Vocabulary> Interpretation<V> {
 							.get(dependency_id)?
 							.unwrap()
 							.different_from()
+							.iter_with(vocabulary)
 						{
+							let other_dependency_id = other_dependency_id?;
 							if let Some(&other_id) = i.target.get(&other_dependency_id) {
 								self.interpretation
 									.get_mut(id)

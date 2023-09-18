@@ -1,14 +1,16 @@
-pub trait IteratorSearch<T, J, E, F: Fn(&T, J) -> Option<T>>: Sized + Clone + Iterator
+use crate::IteratorWith;
+
+pub trait IteratorSearch<V, T, J, E, F: Fn(&T, J) -> Option<T>>: Sized + Clone + Iterator
 where
-	Self::Item: Iterator<Item = Result<J, E>>,
+	Self::Item: IteratorWith<V, Item = Result<J, E>>,
 {
 	fn search(self, initial_value: T, f: F) -> Search<Self, T, F>;
 }
 
-impl<I: Sized + Clone + Iterator, J, E, T, F: Fn(&T, J) -> Option<T>> IteratorSearch<T, J, E, F>
-	for I
+impl<V, I: Sized + Clone + Iterator, J, E, T, F: Fn(&T, J) -> Option<T>>
+	IteratorSearch<V, T, J, E, F> for I
 where
-	I::Item: Iterator<Item = Result<J, E>>,
+	I::Item: IteratorWith<V, Item = Result<J, E>>,
 {
 	fn search(self, initial_value: T, f: F) -> Search<Self, T, F> {
 		Search {
@@ -45,6 +47,49 @@ where
 					let mut error = None;
 
 					for item in items {
+						match item {
+							Ok(item) => {
+								if let Some(next) = (self.f)(&frame.value, item) {
+									self.stack.push(Frame {
+										value: next,
+										rest: frame.rest.clone(),
+									})
+								}
+							}
+							Err(e) => {
+								if error.is_none() {
+									error = Some(e)
+								}
+							}
+						}
+					}
+
+					if let Some(e) = error {
+						return Some(Err(e));
+					}
+				}
+				None => return Some(Ok(frame.value)),
+			}
+		}
+
+		None
+	}
+}
+
+impl<V, I: Clone + Iterator, J, E, T, F> IteratorWith<V> for Search<I, T, F>
+where
+	I::Item: IteratorWith<V, Item = Result<J, E>>,
+	F: Fn(&T, J) -> Option<T>,
+{
+	type Item = Result<T, E>;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
+		while let Some(mut frame) = self.stack.pop() {
+			match frame.rest.next() {
+				Some(mut items) => {
+					let mut error = None;
+
+					while let Some(item) = items.next_with(vocabulary) {
 						match item {
 							Ok(item) => {
 								if let Some(next) = (self.f)(&frame.value, item) {

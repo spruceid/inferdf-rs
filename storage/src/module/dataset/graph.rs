@@ -1,7 +1,7 @@
 use std::io;
 
 use educe::Educe;
-use inferdf_core::{GraphFact, Id};
+use inferdf_core::{GraphFact, Id, IteratorWith};
 use paged::{cache::UnboundRef, no_context_mut, UnboundSliceIter};
 use rdf_types::Vocabulary;
 
@@ -21,7 +21,7 @@ impl<'a, V: Vocabulary, R> Graph<'a, V, R> {
 	}
 }
 
-impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a>
+impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a, V>
 	for Graph<'a, V, R>
 {
 	type Error = Error;
@@ -54,6 +54,10 @@ impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a>
 		Ok(entry.map(|r| Resource { r }))
 	}
 
+	fn len(&self) -> u32 {
+		self.desc.facts.entry_count()
+	}
+
 	fn triples(&self) -> Self::Triples {
 		Triples {
 			r: self.module.reader.iter(
@@ -65,7 +69,11 @@ impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a>
 		}
 	}
 
-	fn get_triple(&self, index: u32) -> Result<Option<inferdf_core::GraphFact>, Self::Error> {
+	fn get_triple(
+		&self,
+		_vocabulary: &mut V,
+		index: u32,
+	) -> Result<Option<inferdf_core::GraphFact>, Self::Error> {
 		self.module
 			.reader
 			.get(
@@ -79,6 +87,7 @@ impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a>
 	}
 }
 
+#[derive(Clone)]
 pub struct Resource<'a> {
 	r: paged::Ref<'a, header::GraphResource, UnboundRef<header::GraphResource>>,
 }
@@ -136,6 +145,14 @@ impl<'a, R: io::Seek + io::Read> Iterator for Resources<'a, R> {
 	}
 }
 
+impl<'a, V, R: io::Seek + io::Read> IteratorWith<V> for Resources<'a, R> {
+	type Item = Result<(Id, Resource<'a>), Error>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}
+
 pub struct Triples<'a, R> {
 	r: paged::Iter<'a, 'a, R, header::GraphFact>,
 	index: u32,
@@ -153,5 +170,13 @@ impl<'a, R: io::Seek + io::Read> Iterator for Triples<'a, R> {
 				(i, fact.into())
 			})
 		})
+	}
+}
+
+impl<'a, V, R: io::Seek + io::Read> IteratorWith<V> for Triples<'a, R> {
+	type Item = Result<(u32, GraphFact), Error>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
 	}
 }

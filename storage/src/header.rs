@@ -4,7 +4,7 @@ mod version;
 use std::io;
 
 use educe::Educe;
-use inferdf_core::{class, Cause, Class, DivCeil, Signed};
+use inferdf_core::{class::{self, GroupId}, Cause, Class, DivCeil, Signed};
 use iref::IriBuf;
 use langtag::LanguageTagBuf;
 use paged::{
@@ -48,6 +48,12 @@ pub struct Interpretation<V: Vocabulary> {
 pub struct IriEntry<V: IriVocabulary> {
 	pub iri: EncodedIri<V>,
 	pub interpretation: Id,
+}
+
+impl<V: IriVocabulary> IriEntry<V> {
+	pub fn iri(&self) -> &V::Iri {
+		&self.iri.0
+	}
 }
 
 #[derive(Educe)]
@@ -94,6 +100,12 @@ impl<V: IriVocabularyMut> paged::DecodeFromHeap<V> for EncodedIri<V> {
 pub struct LiteralEntry<V: LiteralVocabulary> {
 	pub literal: EncodedLiteral<V>,
 	pub interpretation: Id,
+}
+
+impl<V: LiteralVocabulary> LiteralEntry<V> {
+	pub fn literal(&self) -> &V::Literal {
+		&self.literal.0
+	}
 }
 
 #[derive(Educe)]
@@ -176,7 +188,25 @@ pub struct InterpretedResource {
 	pub iris: Vec<u32>,
 	pub literals: Vec<u32>,
 	pub ne: Vec<Id>,
-	pub class: Class,
+	pub class: Option<Class>,
+}
+
+impl InterpretedResource {
+	pub fn new(
+		id: Id,
+		iris: Vec<u32>,
+		literals: Vec<u32>,
+		ne: Vec<Id>,
+		class: Option<Class>,
+	) -> Self {
+		Self {
+			id,
+			iris,
+			literals,
+			ne,
+			class
+		}
+	}
 }
 
 pub struct InterpretationResourceIrisBinder;
@@ -307,20 +337,89 @@ impl<'a> paged::cache::Binder<'a, UnboundRef<GraphResource>, UnboundSliceIter<u3
 
 #[derive(Paged)]
 pub struct Classification {
-	pub groups: Section<Group>,
+	pub groups_by_desc: Section<GroupByDesc>,
+	pub groups_by_id: Section<GroupById>,
 	pub representatives: Section<Representative>,
+}
+
+pub struct GetDescriptionBinder;
+
+#[derive(Paged)]
+#[paged(heap)]
+pub struct GroupByDesc {
+	pub layer: u32,
+	pub description: class::group::Description,
+	pub index: u32,
+}
+
+impl GroupByDesc {
+	pub fn new(
+		description: class::group::Description,
+		id: GroupId
+	) -> Self {
+		Self {
+			layer: id.layer,
+			description,
+			index: id.index
+		}
+	}
+}
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<GroupByDesc>, UnboundRef<class::group::Description>>
+	for GetDescriptionBinder
+{
+	fn bind<'t>(self, t: &'t GroupByDesc) -> &'t class::group::Description
+	where
+		'a: 't,
+	{
+		&t.description
+	}
 }
 
 #[derive(Paged)]
 #[paged(heap)]
-pub struct Group {
-	pub layer: u32,
+pub struct GroupById {
+	pub id: GroupId,
 	pub description: class::group::Description,
-	pub index: u32,
+}
+
+impl GroupById {
+	pub fn new(
+		id: GroupId,
+		description: class::group::Description,
+	) -> Self {
+		Self {
+			id,
+			description
+		}
+	}
+}
+
+impl<'a> paged::cache::Binder<'a, UnboundRef<GroupById>, UnboundRef<class::group::Description>>
+	for GetDescriptionBinder
+{
+	fn bind<'t>(self, t: &'t GroupById) -> &'t class::group::Description
+	where
+		'a: 't,
+	{
+		&t.description
+	}
 }
 
 #[derive(Paged)]
 pub struct Representative {
 	pub class: Class,
 	pub resource: Id,
+}
+
+impl Representative {
+	pub fn new(
+		class: Class,
+		resource: Id,
+	) -> Self {
+		Self {
+			class,
+			resource
+		}
+	}
 }

@@ -24,7 +24,8 @@ pub struct Cache<V: Vocabulary> {
 	graph_facts: paged::Cache<header::GraphFact>,
 	named_graphs: paged::Cache<header::Graph>,
 	interpretation_resources: paged::Cache<header::InterpretedResource>,
-	classification_groups: paged::Cache<header::Group>,
+	classification_groups_by_desc: paged::Cache<header::GroupByDesc>,
+	classification_groups_by_id: paged::Cache<header::GroupById>,
 	classification_representatives: paged::Cache<header::Representative>,
 }
 

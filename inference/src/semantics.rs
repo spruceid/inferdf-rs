@@ -1,7 +1,7 @@
 use inferdf_core::{
 	interpretation::{Interpret, InterpretationMut},
 	pattern::{self, Instantiate, PatternSubstitution},
-	Cause, Entailment, Fact, Id, Signed, Triple,
+	Cause, Entailment, Fact, Id, IteratorWith, Signed, Triple,
 };
 
 pub mod inference;
@@ -11,22 +11,21 @@ use locspan::Meta;
 use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
-pub trait Context {
+pub trait Context<V> {
 	type Error;
-	type DependencyId;
-	type PatternMatching<'a>: 'a
-		+ Iterator<Item = Result<(Fact, Option<Self::DependencyId>), Self::Error>>
+	type PatternMatching<'a>: 'a + IteratorWith<V, Item = Result<(Fact, bool), Self::Error>>
 	where
 		Self: 'a;
 
 	fn pattern_matching(&self, pattern: Signed<pattern::Canonical>) -> Self::PatternMatching<'_>;
 
-	fn new_resource(&mut self) -> Id;
+	fn new_resource(&self) -> Id;
 }
 
 pub trait Semantics {
-	fn deduce<C: Context>(
+	fn deduce<V, C: Context<V>>(
 		&self,
+		vocabulary: &mut V,
 		context: &mut C,
 		triple: Signed<Triple>,
 		entailment_index: impl FnMut(Entailment) -> u32,

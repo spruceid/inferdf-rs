@@ -39,7 +39,7 @@ pub(crate) fn compute_component(
 		bindings.sort_unstable();
 
 		let member = class::group::Member::new(bindings);
-		let group = class::group::Description::new(vec![member]);
+		let group = class::group::Description::non_reflexive(member);
 		let group_id = new_groups.add(group);
 		new_classes.insert(id, LayerClass::new(group_id, 0));
 	}

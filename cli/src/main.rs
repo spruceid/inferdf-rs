@@ -1,11 +1,8 @@
 use clap::Parser;
 use contextual::WithContext;
-use inferdf_core::{
-	interpretation::{self, Interpret},
-	Cause, Sign, Signed,
-};
+use inferdf_core::{interpretation::Interpret, module, Cause, Sign, Signed};
 use inferdf_inference::{
-	builder::{self, Builder, MissingStatement},
+	builder::{BuilderInterpretation, MissingStatement},
 	semantics::{
 		self,
 		inference::{rule::TripleStatement, Rule},
@@ -14,7 +11,7 @@ use inferdf_inference::{
 use locspan::Meta;
 use nquads_syntax::Parse;
 use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral, RdfDisplay};
-use std::{fs, io::BufWriter, path::PathBuf, process::ExitCode};
+use std::{fs, path::PathBuf, process::ExitCode};
 use yansi::Paint;
 
 #[derive(Parser)]
@@ -48,11 +45,9 @@ fn main() -> ExitCode {
 
 	let mut vocabulary: IndexVocabulary = Default::default();
 
-	let dependencies = builder::Dependencies::<
-		IndexVocabulary,
-		inferdf_storage::Module<IndexVocabulary, fs::File>,
-	>::default();
-	let mut interpretation = interpretation::Composite::new();
+	let dependencies: Vec<inferdf_storage::Module<IndexVocabulary, fs::File>> = Vec::new();
+
+	let mut interpretation = BuilderInterpretation::new(module::Composition::new(dependencies));
 
 	let mut system = semantics::inference::System::new();
 	for filename in args.semantics {
@@ -61,10 +56,7 @@ fn main() -> ExitCode {
 		let rules = rules
 			.map_literal(|l| l.insert_type_into_vocabulary(&mut vocabulary))
 			.insert_into_vocabulary(&mut vocabulary)
-			.interpret(
-				&mut vocabulary,
-				&mut interpretation.with_dependencies_mut(&dependencies),
-			)
+			.interpret(&mut vocabulary, &mut interpretation)
 			.unwrap();
 
 		for rule in rules {
@@ -72,7 +64,7 @@ fn main() -> ExitCode {
 		}
 	}
 
-	let mut builder = Builder::new(dependencies, interpretation, system);
+	let mut builder = interpretation.into_builder(system);
 
 	for input in args.inputs {
 		let buffer = std::fs::read_to_string(input).expect("unable to read file");
@@ -104,7 +96,7 @@ fn main() -> ExitCode {
 		}
 	}
 
-	let interpretation = builder.interpretation().local_interpretation();
+	let interpretation = builder.interpretation();
 	for q in builder.dataset().iter().into_quads() {
 		let s = interpretation.terms_of(*q.subject()).next().unwrap();
 		let p = interpretation.terms_of(*q.predicate()).next().unwrap();
@@ -115,10 +107,10 @@ fn main() -> ExitCode {
 		println!("{} .", rdf_types::Quad(s, p, o, g).with(&vocabulary))
 	}
 
-	if let Err(MissingStatement(Signed(_sign, statement), e)) = builder.check() {
+	if let Err(MissingStatement(Signed(_sign, statement), e)) = builder.check(&mut vocabulary) {
 		match statement {
 			TripleStatement::Triple(t) => {
-				let interpretation = builder.interpretation().local_interpretation();
+				let interpretation = builder.interpretation();
 				let s = interpretation.terms_of(*t.subject()).next().unwrap();
 				let p = interpretation.terms_of(*t.predicate()).next().unwrap();
 				let o = interpretation.terms_of(*t.object()).next().unwrap();
@@ -149,19 +141,19 @@ fn main() -> ExitCode {
 
 	let classification = builder.classify_anonymous_nodes().expect("unable to classify nodes");
 
-	let mut output = BufWriter::new(fs::File::create(args.output).expect("unable to open file"));
+	// let mut output = BufWriter::new(fs::File::create(args.output).expect("unable to open file"));
 
-	inferdf_storage::build(
-		&vocabulary,
-		builder.interpretation().local_interpretation(),
-		builder.dataset(),
-		&classification,
-		&mut output,
-		inferdf_storage::BuildOptions {
-			page_size: args.page_size,
-		},
-	)
-	.expect("unable to write BRDF module");
+	// inferdf_storage::build(
+	// 	&vocabulary,
+	// 	builder.interpretation().local_interpretation(),
+	// 	builder.dataset(),
+	// 	&classification,
+	// 	&mut output,
+	// 	inferdf_storage::BuildOptions {
+	// 		page_size: args.page_size,
+	// 	},
+	// )
+	// .expect("unable to write BRDF module");
 
 	ExitCode::SUCCESS
 }

@@ -1,22 +1,34 @@
 use std::{hash::Hash, ops::Deref};
 
 use derivative::Derivative;
+use educe::Educe;
 use hashbrown::{HashMap, HashSet};
 use rdf_types::{LiteralVocabulary, Vocabulary};
-use slab::Slab;
 
-use crate::{uninterpreted, Id, Quad, Triple, class::classification};
+mod reservable_slab;
+use reservable_slab::ReservableSlab;
+
+mod reservation;
+pub use reservation::{CompletedReservation, Reservation};
+
+use crate::{class::classification, uninterpreted, Id, Quad, Triple};
 
 use super::{Contradiction, InterpretationMut};
 
 /// RDF interpretation.
-#[derive(Derivative)]
-#[derivative(Default(bound = ""))]
+#[derive(Educe)]
+#[educe(Default)]
 pub struct Interpretation<V: Vocabulary> {
-	resources: Slab<Resource<V>>,
+	resources: ReservableSlab<Resource<V>>,
 	by_iri: HashMap<V::Iri, Id>,
 	by_blank: HashMap<V::BlankId, Id>,
 	by_literal: HashMap<V::Literal, Id>,
+}
+
+impl<V: Vocabulary> Interpretation<V> {
+	pub fn new() -> Self {
+		Self::default()
+	}
 }
 
 impl<'a, V: Vocabulary> InterpretationMut<'a, V> for Interpretation<V>
@@ -48,6 +60,25 @@ pub struct Resource<V: Vocabulary> {
 impl<V: Vocabulary> Resource<V> {
 	pub fn new() -> Self {
 		Self::default()
+	}
+
+	pub fn add_term(&mut self, term: uninterpreted::Term<V>)
+	where
+		V::Iri: Eq + Hash,
+		V::BlankId: Eq + Hash,
+		V::Literal: Eq + Hash,
+	{
+		match term {
+			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => {
+				self.as_iri.insert(iri);
+			}
+			rdf_types::Term::Id(rdf_types::Id::Blank(blank_id)) => {
+				self.as_blank.insert(blank_id);
+			}
+			rdf_types::Term::Literal(lit) => {
+				self.as_literal.insert(lit);
+			}
+		}
 	}
 
 	pub fn from_iri(iri: V::Iri) -> Self
@@ -94,7 +125,10 @@ impl<V: Vocabulary> Resource<V> {
 pub type ResourceLiteralInstances<V> = HashMap<<V as LiteralVocabulary>::Literal, Id>;
 
 impl<V: Vocabulary> Interpretation<V> {
-	pub fn with_classification(self, classification: classification::Local) -> WithClassification<V> {
+	pub fn with_classification(
+		self,
+		classification: classification::Local,
+	) -> WithClassification<V> {
 		WithClassification::new(self, classification)
 	}
 
@@ -273,7 +307,7 @@ impl<V: Vocabulary> Interpretation<V> {
 			std::mem::swap(&mut a, &mut b);
 		}
 
-		let resource = self.resources.remove(b.index());
+		let resource = self.resources.remove(b.index()).unwrap();
 
 		for id in resource.different_from {
 			if id == a {
@@ -311,10 +345,17 @@ impl<V: Vocabulary> Interpretation<V> {
 			Ok(self.resources[b.index()].different_from.insert(a))
 		}
 	}
+
+	pub fn begin_reservation(&self) -> Reservation<V> {
+		Reservation::new(
+			// self,
+			self.resources.begin_reservation(),
+		)
+	}
 }
 
 pub struct Iter<'a, V: Vocabulary> {
-	inner: slab::Iter<'a, Resource<V>>,
+	inner: reservable_slab::Iter<'a, Resource<V>>,
 }
 
 impl<'a, V: Vocabulary> Iterator for Iter<'a, V> {
@@ -359,20 +400,17 @@ where
 
 pub struct WithClassification<V: Vocabulary> {
 	interpretation: Interpretation<V>,
-	classification: classification::Local
+	classification: classification::Local,
 }
 
 impl<V: Vocabulary> WithClassification<V> {
-	pub fn new(
-		interpretation: Interpretation<V>,
-		classification: classification::Local
-	) -> Self {
+	pub fn new(interpretation: Interpretation<V>, classification: classification::Local) -> Self {
 		Self {
 			interpretation,
-			classification
+			classification,
 		}
 	}
-	
+
 	pub fn classification(&self) -> &classification::Local {
 		&self.classification
 	}

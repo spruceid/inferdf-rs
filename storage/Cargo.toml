@@ -13,10 +13,9 @@ langtag.workspace = true
 derivative.workspace = true
 locspan.workspace = true
 educe.workspace = true
-paged.workspace = true
+paged = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 inferdf-inference.workspace = true
 nquads-syntax.workspace = true
 contextual.workspace = true
-paged = { workspace = true, features = ["derive"] }

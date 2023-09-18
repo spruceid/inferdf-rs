@@ -6,7 +6,7 @@ pub use rule::{Path, Rule};
 
 use inferdf_core::{
 	pattern::{self, Instantiate, Matching},
-	Cause, Entailment, IteratorSearch, Signed, Triple, TryCollect,
+	Cause, Entailment, Fact, IteratorSearch, IteratorWith, Signed, Triple, TryCollectWith,
 };
 
 use self::rule::TripleStatement;
@@ -49,8 +49,9 @@ impl System {
 	}
 
 	/// Deduce new facts from the given triple.
-	pub fn deduce<C: Context>(
+	pub fn deduce<V, C: Context<V>>(
 		&self,
+		vocabulary: &mut V,
 		context: &mut C,
 		triple: Signed<Triple>,
 		mut entailment_index: impl FnMut(Entailment) -> u32,
@@ -58,6 +59,7 @@ impl System {
 	) -> Result<(), C::Error> {
 		for &path in self.paths.get(triple) {
 			self.deduce_from(
+				vocabulary,
 				context,
 				triple,
 				path,
@@ -69,8 +71,9 @@ impl System {
 		Ok(())
 	}
 
-	fn deduce_from<C: Context>(
+	fn deduce_from<V, C: Context<V>>(
 		&self,
+		vocabulary: &mut V,
 		context: &mut C,
 		triple: Signed<Triple>,
 		path: Path,
@@ -94,11 +97,11 @@ impl System {
 				if i == path.pattern {
 					None
 				} else {
-					Some(
-						context
-							.pattern_matching(pattern.cast())
-							.map(move |m| m.map(|(Meta(Signed(_, m), _), _)| (pattern, m))),
-					)
+					Some(context.pattern_matching(pattern.cast()).map(
+						move |m: Result<(Fact, bool), C::Error>| {
+							m.map(|(Meta(Signed(_, m), _), _)| (pattern, m))
+						},
+					))
 				}
 			})
 			.search(substitution, |substitution, (pattern, m)| {
@@ -112,7 +115,7 @@ impl System {
 					None
 				}
 			})
-			.try_collect()?;
+			.try_collect_with(vocabulary)?;
 
 		substitutions
 			.into_iter()
@@ -141,13 +144,14 @@ impl System {
 }
 
 impl Semantics for System {
-	fn deduce<C: Context>(
+	fn deduce<V, C: Context<V>>(
 		&self,
+		vocabulary: &mut V,
 		context: &mut C,
 		triple: Signed<Triple>,
 		entailment_index: impl FnMut(Entailment) -> u32,
 		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
 	) -> Result<(), C::Error> {
-		self.deduce(context, triple, entailment_index, new_triple)
+		self.deduce(vocabulary, context, triple, entailment_index, new_triple)
 	}
 }

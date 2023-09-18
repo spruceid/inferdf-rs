@@ -31,7 +31,7 @@ impl<C> EncodeOnHeap<C> for Tag {
 impl<C> Decode<C> for Tag {
 	fn decode<R: io::Read>(input: &mut R, _context: &mut C) -> io::Result<Self> {
 		let mut buffer = [0; 4];
-		input.read(&mut buffer)?;
+		input.read_exact(&mut buffer)?;
 
 		if buffer == TAG {
 			Ok(Self)

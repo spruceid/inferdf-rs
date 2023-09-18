@@ -6,11 +6,11 @@
 
 use crate::Id;
 
-pub mod group;
 pub mod classification;
+pub mod group;
 
-pub use group::GroupId;
 pub use classification::Classification;
+pub use group::GroupId;
 use paged::Paged;
 
 /// Class.
@@ -29,10 +29,19 @@ impl Class {
 	}
 }
 
-/// Group member of class reference.
+/// Group member or class reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Paged)]
 pub enum Reference {
 	Singleton(Id),
 	Class(Class),
 	Group(u32),
+}
+
+impl Reference {
+	pub fn layer(&self) -> u32 {
+		match self {
+			Self::Singleton(_) | Self::Group(_) => 0,
+			Self::Class(c) => c.group.layer + 1
+		}
+	}
 }

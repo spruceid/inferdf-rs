@@ -1,8 +1,6 @@
 use rdf_types::Vocabulary;
 
-use crate::{
-	uninterpreted, Id, IteratorWith, Quad, Triple,
-};
+use crate::{uninterpreted, Id, IteratorWith, Quad, Triple};
 
 pub mod composite;
 pub mod local;
@@ -18,7 +16,7 @@ pub trait Resource<'a, V: Vocabulary>: Clone {
 	type Error;
 	type Iris: 'a + IteratorWith<V, Item = Result<V::Iri, Self::Error>>;
 	type Literals: 'a + IteratorWith<V, Item = Result<V::Literal, Self::Error>>;
-	type DifferentFrom: 'a + Iterator<Item = Id>;
+	type DifferentFrom: 'a + IteratorWith<V, Item = Result<Id, Self::Error>>;
 
 	fn as_iri(&self) -> Self::Iris;
 
@@ -79,20 +77,50 @@ pub trait Interpretation<'a, V: Vocabulary>: Clone {
 	type Resource: Resource<'a, V, Error = Self::Error>;
 
 	/// Iterator over the interpreted resources.
-	type Resources: Iterator<Item = Result<(Id, Self::Resource), Self::Error>>;
+	/// 
+	/// Resources are ordered by identifier.
+	type Resources: IteratorWith<V, Item = Result<(Id, Self::Resource), Self::Error>>;// ...
+
+	/// Iterator over the IRI interpretations.
+	/// 
+	/// There is no guaranty over the order in which IRIs are presented, and
+	/// the same IRI may be presented multiple times. However if it is presented
+	/// multiple times, it will be with the same interpretation.
+	type Iris: IteratorWith<V, Item = Result<(V::Iri, Id), Self::Error>>;
+
+	/// Iterator over the literal interpretations.
+	/// 
+	/// There is no guaranty over the order in which literals are presented,
+	/// and the same literal may be presented multiple times. However if it is
+	/// presented multiple times, it will be with the same interpretation.
+	type Literals: IteratorWith<V, Item = Result<(V::Literal, Id), Self::Error>>;
 
 	/// Returns an iterator over all the interpreted resources.
-	/// 
+	///
 	/// The iterator may yield the same resource more than once.
 	fn resources(&self) -> Result<Self::Resources, Self::Error>;
 
 	fn get(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error>;
+
+	/// Returns an iterator over the IRI interpretations.
+	/// 
+	/// There is no guaranty over the order in which IRIs are presented, and
+	/// the same IRI may be presented multiple times. However if it is presented
+	/// multiple times, it will be with the same interpretation.
+	fn iris(&self) -> Result<Self::Iris, Self::Error>;
 
 	fn iri_interpretation(
 		&self,
 		vocabulary: &mut V,
 		iri: V::Iri,
 	) -> Result<Option<Id>, Self::Error>;
+
+	/// Returns an iterator over the literal interpretations.
+	/// 
+	/// There is no guaranty over the order in which literals are presented,
+	/// and the same literal may be presented multiple times. However if it is
+	/// presented multiple times, it will be with the same interpretation.
+	fn literals(&self) -> Result<Self::Literals, Self::Error>;
 
 	fn literal_interpretation(
 		&self,
