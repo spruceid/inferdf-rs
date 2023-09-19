@@ -35,40 +35,36 @@ impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::Classification<'a,
 
 	fn classes(&self) -> Self::Classes {
 		Classes {
-			inner: self
-				.module
-				.reader
-				.iter(
-					self.module.header.classification.representatives,
-					&self.module.cache.classification_representatives,
-					self.module.header.heap
-				)
+			inner: self.module.reader.iter(
+				self.module.header.classification.representatives,
+				&self.module.cache.classification_representatives,
+				self.module.header.heap,
+			),
 		}
 	}
 
 	fn groups(&self) -> Self::Groups {
 		Groups {
-			inner: self
-				.module
-				.reader
-				.iter(
-					self.module.header.classification.groups_by_id,
-					&self.module.cache.classification_groups_by_id,
-					self.module.header.heap
-				)
+			inner: self.module.reader.iter(
+				self.module.header.classification.groups_by_id,
+				&self.module.cache.classification_groups_by_id,
+				self.module.header.heap,
+			),
 		}
 	}
 
 	fn group(&self, id: GroupId) -> Result<Option<Self::DescriptionRef>, Self::Error> {
-		Ok(self.module.reader.binary_search_by_key(
-			self.module.header.classification.groups_by_id,
-			&self.module.cache.classification_groups_by_id,
-			no_context_mut(),
-			self.module.header.heap,
-			|g, _| {
-				g.id.cmp(&id)
-			}
-		)?.map(|g| g.map(header::GetDescriptionBinder)))
+		Ok(self
+			.module
+			.reader
+			.binary_search_by_key(
+				self.module.header.classification.groups_by_id,
+				&self.module.cache.classification_groups_by_id,
+				no_context_mut(),
+				self.module.header.heap,
+				|g, _| g.id.cmp(&id),
+			)?
+			.map(|g| g.map(header::GetDescriptionBinder)))
 	}
 
 	/// Find a group with the given layer and description, if any.
@@ -125,7 +121,7 @@ impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::Classification<'a,
 }
 
 pub struct Classes<'a, R> {
-	inner: paged::Iter<'a, 'a, R, header::Representative>
+	inner: paged::Iter<'a, 'a, R, header::Representative>,
 }
 
 impl<'a, R: io::Seek + io::Read> Iterator for Classes<'a, R> {
@@ -145,14 +141,16 @@ impl<'a, V, R: io::Seek + io::Read> IteratorWith<V> for Classes<'a, R> {
 }
 
 pub struct Groups<'a, R> {
-	inner: paged::Iter<'a, 'a, R, header::GroupById>
+	inner: paged::Iter<'a, 'a, R, header::GroupById>,
 }
 
 impl<'a, R: io::Seek + io::Read> Iterator for Groups<'a, R> {
 	type Item = Result<(GroupId, DescriptionRef<'a>), Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|r| r.map(|r| (r.id, r.map(GetDescriptionBinder))))
+		self.inner
+			.next()
+			.map(|r| r.map(|r| (r.id, r.map(GetDescriptionBinder))))
 	}
 }
 

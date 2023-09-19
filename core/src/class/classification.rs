@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 pub mod local;
 
-pub use local::Classification as Local;
+pub use local::LocalClassification as Local;
 
 use crate::{Class, Id, IteratorWith};
 

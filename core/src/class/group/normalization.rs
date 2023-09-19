@@ -1,5 +1,11 @@
+use crate::{
+	class::{
+		group::{self, Member},
+		Reference,
+	},
+	Class, Id, Signed,
+};
 use normal_form::Normalize;
-use crate::{class::{group::{Member, self}, Reference}, Signed, Id, Class};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonNormalizedDescription {
@@ -19,7 +25,7 @@ impl NonNormalizedDescription {
 				if let Reference::Group(a) = a {
 					m_neighbors.push(*a)
 				}
-	
+
 				if let Reference::Group(b) = b {
 					m_neighbors.push(*b)
 				}
@@ -95,10 +101,7 @@ impl Normalize for NonNormalizedDescription {
 	{
 		let mut members = self.members.clone();
 
-		fn apply_morphism_on_reference(
-			reference: &mut Reference,
-			f: impl Fn(&u32) -> usize,
-		) {
+		fn apply_morphism_on_reference(reference: &mut Reference, f: impl Fn(&u32) -> usize) {
 			if let Reference::Group(x) = reference {
 				*x = f(x) as u32
 			}

@@ -5,8 +5,9 @@ use smallvec::SmallVec;
 
 use crate::{
 	module::{
+		composition::CompositionSubModule,
 		sub_module::{IntoLocal, TryIntoGlobal},
-		Composition, composition::CompositionSubModule,
+		Composition,
 	},
 	Dataset, GraphFact, Id, IteratorWith, Module,
 };
@@ -167,11 +168,8 @@ where
 			Some(ref r) => Ok(Some(r)),
 			None => match self.iter.next_with(vocabulary) {
 				Some(Ok((local_id, r))) => {
-					let global_id = composition.import_resource(
-						vocabulary,
-						self.module,
-						local_id,
-					)?;
+					let global_id =
+						composition.import_resource(vocabulary, self.module, local_id)?;
 					self.pending = Some(SubResourcesNext {
 						global_id,
 						resource: r,
@@ -285,11 +283,8 @@ where
 						let global_triple_id = g.triples_offset + local_triple_id;
 
 						let triple = triple.try_into_global(g.module.interface(), |local_id| {
-							self.composition.import_resource(
-								vocabulary,
-								g.module,
-								local_id,
-							)
+							self.composition
+								.import_resource(vocabulary, g.module, local_id)
 						});
 
 						break match triple {

@@ -4,7 +4,10 @@ mod version;
 use std::io;
 
 use educe::Educe;
-use inferdf_core::{class::{self, GroupId}, Cause, Class, DivCeil, Signed};
+use inferdf_core::{
+	class::{self, GroupId},
+	Cause, Class, DivCeil, Signed,
+};
 use iref::IriBuf;
 use langtag::LanguageTagBuf;
 use paged::{
@@ -204,7 +207,7 @@ impl InterpretedResource {
 			iris,
 			literals,
 			ne,
-			class
+			class,
 		}
 	}
 }
@@ -266,7 +269,7 @@ pub struct GraphDescription {
 	pub resources: Section<GraphResource>,
 }
 
-#[derive(Clone, Copy, Paged)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Paged)]
 pub struct Triple(pub Id, pub Id, pub Id);
 
 impl From<Triple> for inferdf_core::Triple {
@@ -275,7 +278,13 @@ impl From<Triple> for inferdf_core::Triple {
 	}
 }
 
-#[derive(Clone, Copy, Paged)]
+impl From<inferdf_core::Triple> for Triple {
+	fn from(value: inferdf_core::Triple) -> Self {
+		Self(value.0, value.1, value.2)
+	}
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Paged)]
 pub struct GraphFact {
 	pub triple: Signed<Triple>,
 	pub cause: Cause,
@@ -353,14 +362,11 @@ pub struct GroupByDesc {
 }
 
 impl GroupByDesc {
-	pub fn new(
-		description: class::group::Description,
-		id: GroupId
-	) -> Self {
+	pub fn new(description: class::group::Description, id: GroupId) -> Self {
 		Self {
 			layer: id.layer,
 			description,
-			index: id.index
+			index: id.index,
 		}
 	}
 }
@@ -384,14 +390,8 @@ pub struct GroupById {
 }
 
 impl GroupById {
-	pub fn new(
-		id: GroupId,
-		description: class::group::Description,
-	) -> Self {
-		Self {
-			id,
-			description
-		}
+	pub fn new(id: GroupId, description: class::group::Description) -> Self {
+		Self { id, description }
 	}
 }
 
@@ -413,13 +413,7 @@ pub struct Representative {
 }
 
 impl Representative {
-	pub fn new(
-		class: Class,
-		resource: Id,
-	) -> Self {
-		Self {
-			class,
-			resource
-		}
+	pub fn new(class: Class, resource: Id) -> Self {
+		Self { class, resource }
 	}
 }

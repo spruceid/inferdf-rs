@@ -5,8 +5,9 @@ use memo_map::MemoMap;
 use rdf_types::Vocabulary;
 
 use crate::{
+	class::{self, GroupId},
 	dataset::{self, Contradiction, TripleId},
-	pattern, Dataset, Fact, FailibleIteratorWith, Id, Module, Sign, Signed, Triple, Class, class::{self, GroupId},
+	pattern, Class, Dataset, Fact, FailibleIteratorWith, Id, Module, Sign, Signed, Triple,
 };
 
 mod into_global;
@@ -196,9 +197,15 @@ pub trait GlobalClassification {
 
 #[derive(Default)]
 pub struct ClassificationInterface {
-	global_to_local_description: MemoMap<class::group::Description, Option<(class::group::Description, class::group::MembersSubstitution)>>,
+	global_to_local_description: MemoMap<
+		class::group::Description,
+		Option<(class::group::Description, class::group::MembersSubstitution)>,
+	>,
 
-	local_to_global_description: MemoMap<class::group::Description, (class::group::Description, class::group::MembersSubstitution)>
+	local_to_global_description: MemoMap<
+		class::group::Description,
+		(class::group::Description, class::group::MembersSubstitution),
+	>,
 }
 
 impl ClassificationInterface {
@@ -210,15 +217,17 @@ impl ClassificationInterface {
 		&self,
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
-		global_id: GroupId
+		global_id: GroupId,
 	) -> Result<Option<(GroupId, &class::group::MembersSubstitution)>, M::Error> {
 		use crate::Classification;
 		let global_desc = global_classification.group(global_id).unwrap();
 		match self.local_group_description(global_classification, sub_module, global_desc)? {
-			Some((local_desc, substitution)) => {
-				Ok(sub_module.module().classification().find_group_id(local_desc)?.map(|local_id| (local_id, substitution)))
-			}
-			None => Ok(None)
+			Some((local_desc, substitution)) => Ok(sub_module
+				.module()
+				.classification()
+				.find_group_id(local_desc)?
+				.map(|local_id| (local_id, substitution))),
+			None => Ok(None),
 		}
 	}
 
@@ -226,22 +235,27 @@ impl ClassificationInterface {
 		&self,
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
-		global_desc: &class::group::Description
-	) -> Result<Option<(&class::group::Description, &class::group::MembersSubstitution)>, M::Error> {
-		self.global_to_local_description.get_or_try_insert(
-			&global_desc,
-			|| {
+		global_desc: &class::group::Description,
+	) -> Result<
+		Option<(
+			&class::group::Description,
+			&class::group::MembersSubstitution,
+		)>,
+		M::Error,
+	> {
+		self.global_to_local_description
+			.get_or_try_insert(global_desc, || {
 				let mut local_members = Vec::with_capacity(global_desc.members.len());
 				for member in &global_desc.members {
 					match self.local_group_member(global_classification, sub_module, member)? {
 						Some(m) => local_members.push(m),
-						None => return Ok(None)
+						None => return Ok(None),
 					}
 				}
 
 				Ok(Some(class::group::Description::new(local_members)))
-			}
-		).map(|r| r.as_ref().map(|(d, s)| (d, s)))
+			})
+			.map(|r| r.as_ref().map(|(d, s)| (d, s)))
 	}
 
 	fn local_group_member<V: Vocabulary, M: Module<V>>(
@@ -267,22 +281,20 @@ impl ClassificationInterface {
 		&self,
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
-		r: &class::Reference
+		r: &class::Reference,
 	) -> Result<Option<class::Reference>, M::Error> {
 		match r {
 			class::Reference::Class(c) => {
 				match self.local_class(global_classification, sub_module, *c)? {
 					Some(local_c) => Ok(Some(class::Reference::Class(local_c))),
-					None => Ok(None)
+					None => Ok(None),
 				}
 			}
-			class::Reference::Group(index) => {
-				Ok(Some(class::Reference::Group(*index)))
-			}
+			class::Reference::Group(index) => Ok(Some(class::Reference::Group(*index))),
 			class::Reference::Singleton(global_id) => {
 				match global_id.into_local(sub_module.interface()) {
 					Some(local_id) => Ok(Some(class::Reference::Singleton(local_id))),
-					None => Ok(None)
+					None => Ok(None),
 				}
 			}
 		}
@@ -292,14 +304,14 @@ impl ClassificationInterface {
 		&self,
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
-		c: Class
+		c: Class,
 	) -> Result<Option<Class>, M::Error> {
 		match self.local_group(global_classification, sub_module, c.group)? {
 			Some((local_group, substitution)) => {
 				let local_member = substitution.get(c.member).unwrap();
 				Ok(Some(Class::new(local_group, local_member)))
 			}
-			None => Ok(None)
+			None => Ok(None),
 		}
 	}
 
@@ -308,9 +320,14 @@ impl ClassificationInterface {
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
 		local_id: GroupId,
-		mut import_local_resource: impl FnMut(Id) -> Result<Id, M::Error>
+		mut import_local_resource: impl FnMut(Id) -> Result<Id, M::Error>,
 	) -> Result<(GroupId, &class::group::MembersSubstitution), M::Error> {
-		self.global_group_with(global_classification, sub_module, local_id, &mut import_local_resource)
+		self.global_group_with(
+			global_classification,
+			sub_module,
+			local_id,
+			&mut import_local_resource,
+		)
 	}
 
 	fn global_group_with<V: Vocabulary, M: Module<V>>(
@@ -318,12 +335,17 @@ impl ClassificationInterface {
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
 		local_id: GroupId,
-		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>
+		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>,
 	) -> Result<(GroupId, &class::group::MembersSubstitution), M::Error> {
 		use crate::Classification;
 		let classification = sub_module.module().classification();
 		let local_desc = classification.group(local_id)?.unwrap();
-		let (global_desc, sub) = self.global_group_description(global_classification, sub_module, &local_desc, import_local_resource)?;
+		let (global_desc, sub) = self.global_group_description(
+			global_classification,
+			sub_module,
+			&local_desc,
+			import_local_resource,
+		)?;
 		Ok((global_classification.insert_group(global_desc), sub))
 	}
 
@@ -332,20 +354,30 @@ impl ClassificationInterface {
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
 		local_desc: &class::group::Description,
-		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>
-	) -> Result<(&class::group::Description, &class::group::MembersSubstitution), M::Error> {
-		self.local_to_global_description.get_or_try_insert(
-			&local_desc,
-			|| {
+		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>,
+	) -> Result<
+		(
+			&class::group::Description,
+			&class::group::MembersSubstitution,
+		),
+		M::Error,
+	> {
+		self.local_to_global_description
+			.get_or_try_insert(local_desc, || {
 				let mut global_members = Vec::with_capacity(local_desc.members.len());
 				for member in &local_desc.members {
-					let global_member = self.global_group_member(global_classification, sub_module, member, import_local_resource)?;
+					let global_member = self.global_group_member(
+						global_classification,
+						sub_module,
+						member,
+						import_local_resource,
+					)?;
 					global_members.push(global_member)
 				}
 
 				Ok(class::group::Description::new(global_members))
-			}
-		).map(|(d, s)| (d, s))
+			})
+			.map(|(d, s)| (d, s))
 	}
 
 	fn global_group_member<V: Vocabulary, M: Module<V>>(
@@ -353,12 +385,22 @@ impl ClassificationInterface {
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
 		local_member: &class::group::Member,
-		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>
+		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>,
 	) -> Result<class::group::Member, M::Error> {
 		let mut global_properties = Vec::with_capacity(local_member.properties.len());
 		for Signed(sign, (a, b)) in &local_member.properties.0 {
-			let global_a = self.global_reference(global_classification, sub_module, a, &mut *import_local_resource)?;
-			let global_b = self.global_reference(global_classification, sub_module, b, &mut *import_local_resource)?;
+			let global_a = self.global_reference(
+				global_classification,
+				sub_module,
+				a,
+				&mut *import_local_resource,
+			)?;
+			let global_b = self.global_reference(
+				global_classification,
+				sub_module,
+				b,
+				&mut *import_local_resource,
+			)?;
 			global_properties.push(Signed(*sign, (global_a, global_b)))
 		}
 
@@ -371,18 +413,22 @@ impl ClassificationInterface {
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
 		r: &class::Reference,
-		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>
+		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>,
 	) -> Result<class::Reference, M::Error> {
 		match r {
 			class::Reference::Class(local_class) => {
-				let global_c = self.global_class(global_classification, sub_module, *local_class, import_local_resource)?;
+				let global_c = self.global_class(
+					global_classification,
+					sub_module,
+					*local_class,
+					import_local_resource,
+				)?;
 				Ok(class::Reference::Class(global_c))
 			}
-			class::Reference::Group(index) => {
-				Ok(class::Reference::Group(*index))
-			}
+			class::Reference::Group(index) => Ok(class::Reference::Group(*index)),
 			class::Reference::Singleton(local_id) => {
-				let global_id = local_id.try_into_global(sub_module.interface(), import_local_resource)?;
+				let global_id =
+					local_id.try_into_global(sub_module.interface(), import_local_resource)?;
 				Ok(class::Reference::Singleton(global_id))
 			}
 		}
@@ -393,9 +439,14 @@ impl ClassificationInterface {
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
 		local_class: Class,
-		mut import_local_resource: impl FnMut(Id) -> Result<Id, M::Error>
+		mut import_local_resource: impl FnMut(Id) -> Result<Id, M::Error>,
 	) -> Result<Class, M::Error> {
-		self.global_class_with(global_classification, sub_module, local_class, &mut import_local_resource)
+		self.global_class_with(
+			global_classification,
+			sub_module,
+			local_class,
+			&mut import_local_resource,
+		)
 	}
 
 	fn global_class_with<V: Vocabulary, M: Module<V>>(
@@ -403,9 +454,14 @@ impl ClassificationInterface {
 		global_classification: &impl GlobalClassification,
 		sub_module: &SubModule<V, M>,
 		local_class: Class,
-		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>
+		import_local_resource: &mut impl FnMut(Id) -> Result<Id, M::Error>,
 	) -> Result<Class, M::Error> {
-		let (global_group, substitution) = self.global_group(global_classification, sub_module, local_class.group, import_local_resource)?;
+		let (global_group, substitution) = self.global_group(
+			global_classification,
+			sub_module,
+			local_class.group,
+			import_local_resource,
+		)?;
 		let global_member = substitution.get(local_class.member).unwrap();
 		Ok(Class::new(global_group, global_member))
 	}

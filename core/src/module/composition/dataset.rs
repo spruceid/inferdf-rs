@@ -2,10 +2,7 @@ use derivative::Derivative;
 use rdf_types::Vocabulary;
 use smallvec::SmallVec;
 
-use crate::{
-	module::sub_module::IntoLocal,
-	Id, IteratorWith, Module,
-};
+use crate::{module::sub_module::IntoLocal, Id, IteratorWith, Module};
 
 use self::graph::SelectedGraph;
 
@@ -99,11 +96,9 @@ where
 			match self.iter.next_with(vocabulary) {
 				Some(Ok((local_id, graph))) => {
 					let global_id = match local_id {
-						Some(local_id) => Some(composition.import_resource(
-							vocabulary,
-							self.module,
-							local_id,
-						)?),
+						Some(local_id) => {
+							Some(composition.import_resource(vocabulary, self.module, local_id)?)
+						}
 						None => None,
 					};
 

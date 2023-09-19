@@ -1,6 +1,7 @@
+pub mod build;
 mod header;
 mod module;
-mod build;
 
+pub use build::build;
 pub use header::Header;
 pub use module::Module;

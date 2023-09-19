@@ -5,7 +5,7 @@ pub use graph::Graph;
 use hashbrown::HashMap;
 use locspan::Meta;
 
-use crate::{pattern, Cause, Id, Quad, ReplaceId, Sign, Signed, Triple};
+use crate::{pattern, Cause, Id, IteratorWith, Quad, ReplaceId, Sign, Signed, Triple};
 
 use self::graph::FactWithGraph;
 
@@ -183,6 +183,28 @@ impl LocalDataset {
 	}
 }
 
+impl<'a, V> crate::Dataset<'a, V> for &'a LocalDataset {
+	type Error = std::convert::Infallible;
+
+	type Graph = &'a Graph;
+
+	type Graphs = Graphs<'a>;
+
+	fn graphs(&self) -> Self::Graphs {
+		Graphs {
+			default_graph: Some(&self.default_graph),
+			named_graphs: self.named_graphs.iter(),
+		}
+	}
+
+	fn graph(&self, id: Option<Id>) -> Result<Option<Self::Graph>, Self::Error> {
+		match id {
+			Some(id) => Ok(self.named_graphs.get(&id)),
+			None => Ok(Some(&self.default_graph)),
+		}
+	}
+}
+
 pub struct NamedGraphs<'a> {
 	named_graphs: hashbrown::hash_map::Iter<'a, Id, Graph>,
 }
@@ -208,6 +230,14 @@ impl<'a> Iterator for Graphs<'a> {
 			.take()
 			.map(|g| (None, g))
 			.or_else(|| self.named_graphs.next().map(|(id, g)| (Some(*id), g)))
+	}
+}
+
+impl<'a, V> IteratorWith<V> for Graphs<'a> {
+	type Item = Result<(Option<Id>, &'a Graph), std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next().map(Ok)
 	}
 }
 

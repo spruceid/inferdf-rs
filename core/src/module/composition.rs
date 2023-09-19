@@ -13,18 +13,21 @@ use crate::{uninterpreted, Id, IteratorWith, Module};
 
 use self::classification::CompositionGlobalClassification;
 
-use super::{SubModule, sub_module::{ClassificationInterface, Interface}};
+use super::{
+	sub_module::{ClassificationInterface, Interface},
+	SubModule,
+};
 
 pub struct CompositionSubModule<V, M> {
 	sub_module: SubModule<V, M>,
-	classification_interface: ClassificationInterface
+	classification_interface: ClassificationInterface,
 }
 
 impl<V, M> CompositionSubModule<V, M> {
 	pub fn new(module: M) -> Self {
 		Self {
 			sub_module: SubModule::new(module),
-			classification_interface: ClassificationInterface::new()
+			classification_interface: ClassificationInterface::new(),
 		}
 	}
 
@@ -49,7 +52,7 @@ impl<V, M> CompositionSubModule<V, M> {
 pub struct Composition<V, M> {
 	modules: Vec<CompositionSubModule<V, M>>,
 	count: RefCell<u32>,
-	global_classification: CompositionGlobalClassification
+	global_classification: CompositionGlobalClassification,
 }
 
 impl<V, M> Composition<V, M> {
@@ -57,7 +60,7 @@ impl<V, M> Composition<V, M> {
 		Self {
 			modules: modules.into_iter().map(CompositionSubModule::new).collect(),
 			count: RefCell::new(0),
-			global_classification: CompositionGlobalClassification::new()
+			global_classification: CompositionGlobalClassification::new(),
 		}
 	}
 
@@ -176,7 +179,7 @@ impl<V: Vocabulary, M: Module<V>> Composition<V, M> {
 	}
 
 	/// Import a resource from its class.
-	/// 
+	///
 	/// The resource must have an assigned class in `sub_module`, which is only
 	/// required if the resource is anonymous (without any non-blank lexical
 	/// term).
@@ -192,7 +195,11 @@ impl<V: Vocabulary, M: Module<V>> Composition<V, M> {
 	{
 		use crate::Classification;
 		let mut global_id = None;
-		let local_class = sub_module.module().classification().resource_class(local_id)?.unwrap();
+		let local_class = sub_module
+			.module()
+			.classification()
+			.resource_class(local_id)?
+			.unwrap();
 		let global_class = sub_module.classification_interface().global_class(
 			&self.global_classification,
 			sub_module.as_sub_module(),
@@ -205,28 +212,25 @@ impl<V: Vocabulary, M: Module<V>> Composition<V, M> {
 
 					Ok(global_id.unwrap())
 				} else {
-					self.import_resource(
-						vocabulary,
-						sub_module,
-						local_id
-					)
+					self.import_resource(vocabulary, sub_module, local_id)
 				}
-			}
+			},
 		)?;
 
 		match global_id {
 			Some(id) => {
-				self.global_classification.set_class_representative(global_class, id);
+				self.global_classification
+					.set_class_representative(global_class, id);
 				Ok(id)
-			},
-			None => {
-				Ok(self.global_classification.get_or_insert_class_representative(global_class, || self.new_resource()))
 			}
+			None => Ok(self
+				.global_classification
+				.get_or_insert_class_representative(global_class, || self.new_resource())),
 		}
 	}
 
 	/// Import a resource from its non-blank lexical representation.
-	/// 
+	///
 	/// Returns `None` if the resource has no known non-blank lexical
 	/// representation (it is an anonymous resource).
 	fn import_resource_from_lexical_terms(
@@ -273,7 +277,7 @@ impl<V: Vocabulary, M: Module<V>> Composition<V, M> {
 			.get_or_try_insert_global(local_id, |local_id| {
 				match self.import_resource_from_lexical_terms(vocabulary, sub_module, local_id)? {
 					Some(global_id) => Ok(global_id),
-					None => self.import_resource_from_class(vocabulary, sub_module, local_id)
+					None => self.import_resource_from_class(vocabulary, sub_module, local_id),
 				}
 			})
 	}

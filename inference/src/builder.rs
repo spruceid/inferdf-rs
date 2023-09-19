@@ -142,11 +142,11 @@ impl<V: Vocabulary, D, S> Builder<V, D, S> {
 		}
 	}
 
-	pub fn interpretation(&self) -> &interpretation::Local<V> {
+	pub fn local_interpretation(&self) -> &interpretation::Local<V> {
 		&self.interpretation
 	}
 
-	pub fn dataset(&self) -> &dataset::LocalDataset {
+	pub fn local_dataset(&self) -> &dataset::LocalDataset {
 		&self.dataset
 	}
 

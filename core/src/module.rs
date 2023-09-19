@@ -3,9 +3,11 @@ use rdf_types::Vocabulary;
 use crate::{Classification, Dataset, Interpretation};
 
 pub mod composition;
+pub mod local;
 pub mod sub_module;
 
 pub use composition::Composition;
+pub use local::{LocalModule as Local, LocalModuleRef as LocalRef};
 pub use sub_module::SubModule;
 
 /// RDF module.

@@ -77,7 +77,7 @@ where
 		Ok(Iris {
 			composition: self.composition,
 			sub_modules: self.composition.modules.iter(),
-			current: None
+			current: None,
 		})
 	}
 
@@ -106,7 +106,7 @@ where
 		Ok(Literals {
 			composition: self.composition,
 			sub_modules: self.composition.modules.iter(),
-			current: None
+			current: None,
 		})
 	}
 
@@ -246,47 +246,47 @@ where
 pub struct Iris<'a, V: Vocabulary, M: Module<V>> {
 	composition: &'a Composition<V, M>,
 	sub_modules: std::slice::Iter<'a, CompositionSubModule<V, M>>,
-	current: Option<SubModuleIris<'a, V, M>>
+	current: Option<SubModuleIris<'a, V, M>>,
 }
 
 struct SubModuleIris<'a, V: 'a + Vocabulary, M: 'a + Module<V>> {
 	module: &'a CompositionSubModule<V, M>,
-	iris: <M::Interpretation<'a> as crate::Interpretation<'a, V>>::Iris
+	iris: <M::Interpretation<'a> as crate::Interpretation<'a, V>>::Iris,
 }
 
 impl<'a, V: Vocabulary, M: Module<V>> IteratorWith<V> for Iris<'a, V, M>
 where
 	V::Iri: Clone,
-	V::Literal: Clone
+	V::Literal: Clone,
 {
 	type Item = Result<(V::Iri, Id), M::Error>;
-	
+
 	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
 		loop {
 			match &mut self.current {
 				Some(current) => match current.iris.next_with(vocabulary) {
 					Some(Ok((iri, local_id))) => {
-						match self.composition.import_resource(vocabulary, current.module, local_id) {
+						match self
+							.composition
+							.import_resource(vocabulary, current.module, local_id)
+						{
 							Ok(global_id) => break Some(Ok((iri, global_id))),
-							Err(e) => break Some(Err(e))
+							Err(e) => break Some(Err(e)),
 						}
 					}
 					Some(Err(e)) => break Some(Err(e)),
-					None => self.current = None
-				}
+					None => self.current = None,
+				},
 				None => match self.sub_modules.next() {
 					Some(module) => {
 						use crate::Interpretation;
 						match module.module().interpretation().iris() {
-							Ok(iris) => self.current = Some(SubModuleIris {
-								module,
-								iris
-							}),
-							Err(e) => break Some(Err(e))
+							Ok(iris) => self.current = Some(SubModuleIris { module, iris }),
+							Err(e) => break Some(Err(e)),
 						}
-					},
-					None => break None
-				}
+					}
+					None => break None,
+				},
 			}
 		}
 	}
@@ -295,47 +295,49 @@ where
 pub struct Literals<'a, V: Vocabulary, M: Module<V>> {
 	composition: &'a Composition<V, M>,
 	sub_modules: std::slice::Iter<'a, CompositionSubModule<V, M>>,
-	current: Option<SubModuleLiterals<'a, V, M>>
+	current: Option<SubModuleLiterals<'a, V, M>>,
 }
 
 struct SubModuleLiterals<'a, V: 'a + Vocabulary, M: 'a + Module<V>> {
 	module: &'a CompositionSubModule<V, M>,
-	literals: <M::Interpretation<'a> as crate::Interpretation<'a, V>>::Literals
+	literals: <M::Interpretation<'a> as crate::Interpretation<'a, V>>::Literals,
 }
 
 impl<'a, V: Vocabulary, M: Module<V>> IteratorWith<V> for Literals<'a, V, M>
 where
 	V::Iri: Clone,
-	V::Literal: Clone
+	V::Literal: Clone,
 {
 	type Item = Result<(V::Literal, Id), M::Error>;
-	
+
 	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
 		loop {
 			match &mut self.current {
 				Some(current) => match current.literals.next_with(vocabulary) {
 					Some(Ok((iri, local_id))) => {
-						match self.composition.import_resource(vocabulary, current.module, local_id) {
+						match self
+							.composition
+							.import_resource(vocabulary, current.module, local_id)
+						{
 							Ok(global_id) => break Some(Ok((iri, global_id))),
-							Err(e) => break Some(Err(e))
+							Err(e) => break Some(Err(e)),
 						}
 					}
 					Some(Err(e)) => break Some(Err(e)),
-					None => self.current = None
-				}
+					None => self.current = None,
+				},
 				None => match self.sub_modules.next() {
 					Some(module) => {
 						use crate::Interpretation;
 						match module.module().interpretation().literals() {
-							Ok(literals) => self.current = Some(SubModuleLiterals {
-								module,
-								literals
-							}),
-							Err(e) => break Some(Err(e))
+							Ok(literals) => {
+								self.current = Some(SubModuleLiterals { module, literals })
+							}
+							Err(e) => break Some(Err(e)),
 						}
-					},
-					None => break None
-				}
+					}
+					None => break None,
+				},
 			}
 		}
 	}

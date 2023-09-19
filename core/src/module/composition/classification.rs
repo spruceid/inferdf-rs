@@ -4,7 +4,9 @@ use group::GroupId;
 use memo_map::MemoMap;
 use rdf_types::Vocabulary;
 
-use crate::{class::group, Class, Id, Module, module::sub_module::GlobalClassification, IteratorWith};
+use crate::{
+	class::group, module::sub_module::GlobalClassification, Class, Id, IteratorWith, Module,
+};
 
 use super::{Composition, CompositionSubModule};
 
@@ -13,7 +15,7 @@ pub(crate) struct CompositionGlobalClassification {
 	layers: AppendList<Layer>,
 	map: MemoMap<group::Description, GroupId>,
 	resource_classes: MemoMap<Id, Class>,
-	class_representatives: MemoMap<Class, Id>
+	class_representatives: MemoMap<Class, Id>,
 }
 
 impl CompositionGlobalClassification {
@@ -36,7 +38,7 @@ impl CompositionGlobalClassification {
 	pub fn get_or_insert_class_representative(
 		&self,
 		class: Class,
-		new_resource: impl FnOnce() -> Id
+		new_resource: impl FnOnce() -> Id,
 	) -> Id {
 		*self.class_representatives.get_or_insert(&class, || {
 			let id = new_resource();
@@ -102,7 +104,7 @@ impl<'a, V, M> Classification<'a, V, M> {
 impl<'a, V: Vocabulary, M: Module<V>> crate::Classification<'a, V> for Classification<'a, V, M>
 where
 	V::Iri: Clone,
-	V::Literal: Clone
+	V::Literal: Clone,
 {
 	type Error = M::Error;
 
@@ -116,7 +118,7 @@ where
 		Groups {
 			composition: self.composition,
 			sub_modules: self.composition.modules.iter(),
-			current: None
+			current: None,
 		}
 	}
 
@@ -133,11 +135,15 @@ where
 			let local_desc = m.classification_interface().local_group_description(
 				&self.composition.global_classification,
 				m.as_sub_module(),
-				global_description
+				global_description,
 			)?;
 
 			if local_desc.is_some() {
-				return Ok(Some(self.composition.global_classification.insert_group(global_description)))
+				return Ok(Some(
+					self.composition
+						.global_classification
+						.insert_group(global_description),
+				));
 			}
 		}
 
@@ -148,35 +154,41 @@ where
 		Classes {
 			composition: self.composition,
 			sub_modules: self.composition.modules.iter(),
-			current: None
+			current: None,
 		}
 	}
 
 	/// Returns the representative of the given class, if any.
 	fn class_representative(&self, global_class: Class) -> Result<Option<Id>, Self::Error> {
-		Ok(self.composition.global_classification.class_representative(global_class))
+		Ok(self
+			.composition
+			.global_classification
+			.class_representative(global_class))
 	}
 
 	fn resource_class(&self, global_id: Id) -> Result<Option<Class>, Self::Error> {
-		Ok(self.composition.global_classification.resource_class(global_id))
+		Ok(self
+			.composition
+			.global_classification
+			.resource_class(global_id))
 	}
 }
 
 pub struct Groups<'a, V: Vocabulary, M: Module<V>> {
 	composition: &'a Composition<V, M>,
 	sub_modules: std::slice::Iter<'a, CompositionSubModule<V, M>>,
-	current: Option<SubModuleGroups<'a, V, M>>
+	current: Option<SubModuleGroups<'a, V, M>>,
 }
 
 struct SubModuleGroups<'a, V: Vocabulary, M: Module<V>> {
 	sub_module: &'a CompositionSubModule<V, M>,
-	groups: <M::Classification<'a> as crate::Classification<'a, V>>::Groups
+	groups: <M::Classification<'a> as crate::Classification<'a, V>>::Groups,
 }
 
 impl<'a, V: Vocabulary, M: Module<V>> IteratorWith<V> for Groups<'a, V, M>
 where
 	V::Iri: Clone,
-	V::Literal: Clone
+	V::Literal: Clone,
 {
 	type Item = Result<(GroupId, &'a group::Description), M::Error>;
 
@@ -190,25 +202,34 @@ where
 							&self.composition.global_classification,
 							current.sub_module.as_sub_module(),
 							local_id,
-							|id| self.composition.import_resource(vocabulary, current.sub_module, id)
+							|id| {
+								self.composition
+									.import_resource(vocabulary, current.sub_module, id)
+							},
 						) {
 							Ok((global_id, _)) => {
-								let global_desc = self.composition.global_classification.group(global_id).unwrap();
-								break Some(Ok((global_id, global_desc)))
+								let global_desc = self
+									.composition
+									.global_classification
+									.group(global_id)
+									.unwrap();
+								break Some(Ok((global_id, global_desc)));
 							}
-							Err(e) => break Some(Err(e))
+							Err(e) => break Some(Err(e)),
 						}
 					}
 					Some(Err(e)) => break Some(Err(e)),
-					None => self.current = None
-				}
+					None => self.current = None,
+				},
 				None => match self.sub_modules.next() {
-					Some(sub_module) => self.current = Some(SubModuleGroups {
-						sub_module,
-						groups: sub_module.module().classification().groups()
-					}),
-					None => break None
-				}
+					Some(sub_module) => {
+						self.current = Some(SubModuleGroups {
+							sub_module,
+							groups: sub_module.module().classification().groups(),
+						})
+					}
+					None => break None,
+				},
 			}
 		}
 	}
@@ -217,18 +238,18 @@ where
 pub struct Classes<'a, V: Vocabulary, M: Module<V>> {
 	composition: &'a Composition<V, M>,
 	sub_modules: std::slice::Iter<'a, CompositionSubModule<V, M>>,
-	current: Option<SubModuleClasses<'a, V, M>>
+	current: Option<SubModuleClasses<'a, V, M>>,
 }
 
 struct SubModuleClasses<'a, V: Vocabulary, M: Module<V>> {
 	sub_module: &'a CompositionSubModule<V, M>,
-	classes: <M::Classification<'a> as crate::Classification<'a, V>>::Classes
+	classes: <M::Classification<'a> as crate::Classification<'a, V>>::Classes,
 }
 
 impl<'a, V: Vocabulary, M: Module<V>> IteratorWith<V> for Classes<'a, V, M>
 where
 	V::Iri: Clone,
-	V::Literal: Clone
+	V::Literal: Clone,
 {
 	type Item = Result<(Class, Id), M::Error>;
 
@@ -242,27 +263,36 @@ where
 							&self.composition.global_classification,
 							current.sub_module.as_sub_module(),
 							local_class,
-							|id| self.composition.import_resource(vocabulary, current.sub_module, id)
+							|id| {
+								self.composition
+									.import_resource(vocabulary, current.sub_module, id)
+							},
 						) {
 							Ok(global_class) => {
-								match self.composition.import_resource(vocabulary, current.sub_module, local_id) {
+								match self.composition.import_resource(
+									vocabulary,
+									current.sub_module,
+									local_id,
+								) {
 									Ok(global_id) => break Some(Ok((global_class, global_id))),
-									Err(e) => break Some(Err(e))
+									Err(e) => break Some(Err(e)),
 								}
 							}
-							Err(e) => break Some(Err(e))
+							Err(e) => break Some(Err(e)),
 						}
 					}
 					Some(Err(e)) => break Some(Err(e)),
-					None => self.current = None
-				}
+					None => self.current = None,
+				},
 				None => match self.sub_modules.next() {
-					Some(sub_module) => self.current = Some(SubModuleClasses {
-						sub_module,
-						classes: sub_module.module().classification().classes()
-					}),
-					None => break None
-				}
+					Some(sub_module) => {
+						self.current = Some(SubModuleClasses {
+							sub_module,
+							classes: sub_module.module().classification().classes(),
+						})
+					}
+					None => break None,
+				},
 			}
 		}
 	}

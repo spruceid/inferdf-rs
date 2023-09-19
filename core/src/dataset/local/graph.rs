@@ -10,7 +10,8 @@ use locspan::Meta;
 use slab::Slab;
 
 use crate::{
-	dataset::Contradiction, pattern, Cause, Id, ReplaceId, Sign, Signed, Triple, TripleExt,
+	dataset::Contradiction, pattern, Cause, Id, IteratorWith, ReplaceId, Sign, Signed, Triple,
+	TripleExt,
 };
 
 pub type Fact = Meta<Signed<Triple>, Cause>;
@@ -520,94 +521,86 @@ impl<'a> Iterator for InnerMatching<'a> {
 	}
 }
 
-// pub enum MatchingMut<'a> {
-// 	None,
-// 	All(slab::IterMut<'a, Fact>),
-// 	Constrained {
-// 		facts: &'a mut Slab<Fact>,
-// 		subject: Option<std::collections::btree_set::Iter<'a, usize>>,
-// 		predicate: Option<std::collections::btree_set::Iter<'a, usize>>,
-// 		object: Option<std::collections::btree_set::Iter<'a, usize>>,
-// 	},
-// }
+impl<'a> crate::dataset::graph::Resource<'a> for &'a Resource {
+	type AsSubject = std::iter::Copied<std::collections::btree_set::Iter<'a, u32>>;
+	type AsPredicate = std::iter::Copied<std::collections::btree_set::Iter<'a, u32>>;
+	type AsObject = std::iter::Copied<std::collections::btree_set::Iter<'a, u32>>;
 
-// impl<'a> Iterator for MatchingMut<'a> {
-// 	type Item = (usize, Meta<&'a Signed<Triple>, &'a mut M>);
+	fn as_subject(&self) -> Self::AsSubject {
+		self.as_subject.iter().copied()
+	}
 
-// 	fn next(&mut self) -> Option<Self::Item> {
-// 		match self {
-// 			Self::None => None,
-// 			Self::All(iter) => iter.next().map(|(i, Meta(t, m))| (i, Meta(&*t, m))),
-// 			Self::Constrained {
-// 				facts,
-// 				subject,
-// 				predicate,
-// 				object,
-// 			} => {
-// 				enum State {
-// 					Subject,
-// 					Predicate,
-// 					Object,
-// 				}
+	fn as_predicate(&self) -> Self::AsPredicate {
+		self.as_predicate.iter().copied()
+	}
 
-// 				impl State {
-// 					fn next(self) -> Self {
-// 						match self {
-// 							Self::Subject => Self::Predicate,
-// 							Self::Predicate => Self::Object,
-// 							Self::Object => Self::Subject,
-// 						}
-// 					}
-// 				}
+	fn as_object(&self) -> Self::AsObject {
+		self.as_object.iter().copied()
+	}
+}
 
-// 				let mut state = State::Subject;
-// 				let mut candidate = None;
-// 				let mut count = 0;
+impl<'a, V> crate::dataset::Graph<'a, V> for &'a Graph {
+	type Error = std::convert::Infallible;
 
-// 				while count < 3 {
-// 					let iter = match state {
-// 						State::Subject => subject.as_mut(),
-// 						State::Predicate => predicate.as_mut(),
-// 						State::Object => object.as_mut(),
-// 					};
+	type Resource = &'a Resource;
 
-// 					if let Some(iter) = iter {
-// 						loop {
-// 							match iter.next().copied() {
-// 								Some(i) => match candidate {
-// 									Some(j) => {
-// 										if i >= j {
-// 											if i > j {
-// 												candidate = Some(i);
-// 												count = 0
-// 											}
-// 											break;
-// 										}
-// 									}
-// 									None => {
-// 										candidate = Some(i);
-// 										break;
-// 									}
-// 								},
-// 								None => return None,
-// 							}
-// 						}
-// 					}
+	type Resources = Resources<'a>;
 
-// 					count += 1;
-// 					state = state.next();
-// 				}
+	type Triples = Facts<'a>;
 
-// 				candidate.map(|i| {
-// 					let Meta(t, m): &'a mut Fact = unsafe {
-// 						// This is safe because the iterator does not yield
-// 						// aliased items.
-// 						std::mem::transmute(&mut facts[i])
-// 					};
+	fn get_resource(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error> {
+		Ok(self.resources.get(&id))
+	}
 
-// 					(i, Meta(&*t, m))
-// 				})
-// 			}
-// 		}
-// 	}
-// }
+	fn resources(&self) -> Self::Resources {
+		Resources(self.resources.iter())
+	}
+
+	fn get_triple(&self, _vocabulary: &mut V, index: u32) -> Result<Option<Fact>, Self::Error> {
+		Ok(self.facts.get(index as usize).copied())
+	}
+
+	fn len(&self) -> u32 {
+		self.facts.len() as u32
+	}
+
+	fn triples(&self) -> Self::Triples {
+		Facts(self.facts.iter())
+	}
+}
+
+pub struct Resources<'a>(hashbrown::hash_map::Iter<'a, Id, Resource>);
+
+impl<'a> Iterator for Resources<'a> {
+	type Item = Result<(Id, &'a Resource), std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(|(id, r)| Ok((*id, r)))
+	}
+}
+
+impl<'a, V> IteratorWith<V> for Resources<'a> {
+	type Item = Result<(Id, &'a Resource), std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}
+
+pub struct Facts<'a>(slab::Iter<'a, Fact>);
+
+impl<'a> Iterator for Facts<'a> {
+	type Item = Result<(u32, Fact), std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(|(i, r)| Ok((i as u32, *r)))
+	}
+}
+
+impl<'a, V> IteratorWith<V> for Facts<'a> {
+	type Item = Result<(u32, Fact), std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}

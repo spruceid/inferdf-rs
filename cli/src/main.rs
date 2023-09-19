@@ -11,7 +11,7 @@ use inferdf_inference::{
 use locspan::Meta;
 use nquads_syntax::Parse;
 use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral, RdfDisplay};
-use std::{fs, path::PathBuf, process::ExitCode};
+use std::{fs, io::BufWriter, path::PathBuf, process::ExitCode};
 use yansi::Paint;
 
 #[derive(Parser)]
@@ -96,8 +96,8 @@ fn main() -> ExitCode {
 		}
 	}
 
-	let interpretation = builder.interpretation();
-	for q in builder.dataset().iter().into_quads() {
+	let interpretation = builder.local_interpretation();
+	for q in builder.local_dataset().iter().into_quads() {
 		let s = interpretation.terms_of(*q.subject()).next().unwrap();
 		let p = interpretation.terms_of(*q.predicate()).next().unwrap();
 		let o = interpretation.terms_of(*q.object()).next().unwrap();
@@ -110,7 +110,7 @@ fn main() -> ExitCode {
 	if let Err(MissingStatement(Signed(_sign, statement), e)) = builder.check(&mut vocabulary) {
 		match statement {
 			TripleStatement::Triple(t) => {
-				let interpretation = builder.interpretation();
+				let interpretation = builder.local_interpretation();
 				let s = interpretation.terms_of(*t.subject()).next().unwrap();
 				let p = interpretation.terms_of(*t.predicate()).next().unwrap();
 				let o = interpretation.terms_of(*t.object()).next().unwrap();
@@ -139,21 +139,27 @@ fn main() -> ExitCode {
 		return ExitCode::FAILURE;
 	}
 
-	let classification = builder.classify_anonymous_nodes().expect("unable to classify nodes");
+	let classification = builder
+		.classify_anonymous_nodes()
+		.expect("unable to classify nodes");
 
-	// let mut output = BufWriter::new(fs::File::create(args.output).expect("unable to open file"));
+	let module = module::LocalRef::new(
+		builder.local_interpretation(),
+		builder.local_dataset(),
+		&classification,
+	);
 
-	// inferdf_storage::build(
-	// 	&vocabulary,
-	// 	builder.interpretation().local_interpretation(),
-	// 	builder.dataset(),
-	// 	&classification,
-	// 	&mut output,
-	// 	inferdf_storage::BuildOptions {
-	// 		page_size: args.page_size,
-	// 	},
-	// )
-	// .expect("unable to write BRDF module");
+	let mut output = BufWriter::new(fs::File::create(args.output).expect("unable to open file"));
+
+	inferdf_storage::build(
+		&mut vocabulary,
+		&module,
+		&mut output,
+		inferdf_storage::build::Options {
+			page_size: args.page_size,
+		},
+	)
+	.expect("unable to write BRDF module");
 
 	ExitCode::SUCCESS
 }

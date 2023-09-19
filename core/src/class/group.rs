@@ -23,18 +23,20 @@ impl GroupId {
 
 pub enum MembersSubstitution {
 	NonReflexive,
-	Reflexive(Vec<usize>)
+	Reflexive(Vec<usize>),
 }
 
 impl MembersSubstitution {
 	pub fn get(&self, i: u32) -> Option<u32> {
 		match self {
-			Self::NonReflexive => if i == 0 {
-				Some(0)
-			} else {
-				None
-			},
-			Self::Reflexive(s) => s.get(i as usize).map(|j| *j as u32)
+			Self::NonReflexive => {
+				if i == 0 {
+					Some(0)
+				} else {
+					None
+				}
+			}
+			Self::Reflexive(s) => s.get(i as usize).map(|j| *j as u32),
 		}
 	}
 }

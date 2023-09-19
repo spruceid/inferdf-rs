@@ -74,8 +74,8 @@ where
 			r: self.module.reader.iter(
 				self.module.header.interpretation.iris,
 				&self.module.cache.iris,
-				self.module.header.heap
-			)
+				self.module.header.heap,
+			),
 		})
 	}
 
@@ -104,8 +104,8 @@ where
 			r: self.module.reader.iter(
 				self.module.header.interpretation.literals,
 				&self.module.cache.literals,
-				self.module.header.heap
-			)
+				self.module.header.heap,
+			),
 		})
 	}
 
@@ -312,16 +312,17 @@ pub struct Iris<'a, V: Vocabulary, R> {
 	r: paged::Iter<'a, 'a, R, header::IriEntry<V>>,
 }
 
-impl<'a, V: Vocabulary + IriVocabularyMut, R: io::Seek + io::Read> IteratorWith<V> for Iris<'a, V, R>
+impl<'a, V: Vocabulary + IriVocabularyMut, R: io::Seek + io::Read> IteratorWith<V>
+	for Iris<'a, V, R>
 where
-	V::Iri: Clone
+	V::Iri: Clone,
 {
 	type Item = Result<(V::Iri, Id), Error>;
 
 	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
-		self.r.next_with(vocabulary).map(|r| r.map(|entry| {
-			(entry.iri.0.clone(), entry.interpretation)
-		}))
+		self.r
+			.next_with(vocabulary)
+			.map(|r| r.map(|entry| (entry.iri.0.clone(), entry.interpretation)))
 	}
 }
 
@@ -333,13 +334,13 @@ impl<'a, V: VocabularyMut, R: io::Seek + io::Read> IteratorWith<V> for Literals<
 where
 	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
 	V::Literal: Clone,
-	V::Value: From<String>
+	V::Value: From<String>,
 {
 	type Item = Result<(V::Literal, Id), Error>;
 
 	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
-		self.r.next_with(vocabulary).map(|r| r.map(|entry| {
-			(entry.literal.0.clone(), entry.interpretation)
-		}))
+		self.r
+			.next_with(vocabulary)
+			.map(|r| r.map(|entry| (entry.literal.0.clone(), entry.interpretation)))
 	}
 }

@@ -2,7 +2,10 @@ use educe::Educe;
 use rdf_types::Vocabulary;
 use smallvec::SmallVec;
 
-use crate::{module::composition::{Composition, CompositionSubModule}, Id, IteratorWith, Module};
+use crate::{
+	module::composition::{Composition, CompositionSubModule},
+	Id, IteratorWith, Module,
+};
 
 #[derive(Educe)]
 #[educe(Clone)]
@@ -16,10 +19,7 @@ impl<'a, V: 'a + Vocabulary, M: 'a + Module<V>> SubResource<'a, V, M> {
 		module: &'a CompositionSubModule<V, M>,
 		resource: <M::Interpretation<'a> as crate::Interpretation<'a, V>>::Resource,
 	) -> Self {
-		Self {
-			module,
-			resource,
-		}
+		Self { module, resource }
 	}
 }
 
@@ -143,11 +143,10 @@ where
 			match &mut self.current {
 				Some(r) => match r.iter.next_with(vocabulary) {
 					Some(Ok(local_id)) => {
-						break Some(self.composition.import_resource(
-							vocabulary,
-							r.module,
-							local_id,
-						))
+						break Some(
+							self.composition
+								.import_resource(vocabulary, r.module, local_id),
+						)
 					}
 					Some(Err(e)) => break Some(Err(e)),
 					None => self.current = None,

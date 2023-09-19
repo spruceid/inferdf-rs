@@ -41,7 +41,7 @@ impl Reference {
 	pub fn layer(&self) -> u32 {
 		match self {
 			Self::Singleton(_) | Self::Group(_) => 0,
-			Self::Class(c) => c.group.layer + 1
+			Self::Class(c) => c.group.layer + 1,
 		}
 	}
 }

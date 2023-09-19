@@ -3,7 +3,7 @@ use std::{hash::Hash, ops::Deref};
 use derivative::Derivative;
 use educe::Educe;
 use hashbrown::{HashMap, HashSet};
-use rdf_types::{LiteralVocabulary, Vocabulary};
+use rdf_types::{IriVocabulary, LiteralVocabulary, Vocabulary};
 
 mod reservable_slab;
 use reservable_slab::ReservableSlab;
@@ -11,7 +11,7 @@ use reservable_slab::ReservableSlab;
 mod reservation;
 pub use reservation::{CompletedReservation, Reservation};
 
-use crate::{class::classification, uninterpreted, Id, Quad, Triple};
+use crate::{class::classification, uninterpreted, Id, IteratorWith, Quad, Triple};
 
 use super::{Contradiction, InterpretationMut};
 
@@ -28,6 +28,119 @@ pub struct Interpretation<V: Vocabulary> {
 impl<V: Vocabulary> Interpretation<V> {
 	pub fn new() -> Self {
 		Self::default()
+	}
+}
+
+impl<'a, V: Vocabulary> crate::Interpretation<'a, V> for &'a Interpretation<V>
+where
+	V::Iri: Clone + Eq + Hash,
+	V::Literal: Clone + Eq + Hash,
+{
+	type Error = std::convert::Infallible;
+
+	type Resource = &'a Resource<V>;
+
+	type Iris = Iris<'a, V>;
+	type Literals = Literals<'a, V>;
+
+	type Resources = Resources<'a, V>;
+
+	fn get(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error> {
+		Ok(self.resources.get(id.0 as usize))
+	}
+
+	fn resources(&self) -> Result<Self::Resources, Self::Error> {
+		Ok(Resources(self.resources.iter()))
+	}
+
+	fn iri_interpretation(
+		&self,
+		_vocabulary: &mut V,
+		iri: <V>::Iri,
+	) -> Result<Option<Id>, Self::Error> {
+		Ok(self.by_iri.get(&iri).copied())
+	}
+
+	fn iris(&self) -> Result<Self::Iris, Self::Error> {
+		Ok(Iris(self.by_iri.iter()))
+	}
+
+	fn literal_interpretation(
+		&self,
+		_vocabulary: &mut V,
+		literal: <V>::Literal,
+	) -> Result<Option<Id>, Self::Error> {
+		Ok(self.by_literal.get(&literal).copied())
+	}
+
+	fn literals(&self) -> Result<Self::Literals, Self::Error> {
+		Ok(Literals(self.by_literal.iter()))
+	}
+}
+
+pub struct Iris<'a, V: IriVocabulary>(hashbrown::hash_map::Iter<'a, V::Iri, Id>);
+
+impl<'a, V: IriVocabulary> Iterator for Iris<'a, V>
+where
+	V::Iri: Clone,
+{
+	type Item = Result<(V::Iri, Id), std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(|(i, id)| Ok((i.clone(), *id)))
+	}
+}
+
+impl<'a, V: IriVocabulary> IteratorWith<V> for Iris<'a, V>
+where
+	V::Iri: Clone,
+{
+	type Item = Result<(V::Iri, Id), std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}
+
+pub struct Literals<'a, V: LiteralVocabulary>(hashbrown::hash_map::Iter<'a, V::Literal, Id>);
+
+impl<'a, V: LiteralVocabulary> Iterator for Literals<'a, V>
+where
+	V::Literal: Clone,
+{
+	type Item = Result<(V::Literal, Id), std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(|(i, id)| Ok((i.clone(), *id)))
+	}
+}
+
+impl<'a, V: LiteralVocabulary> IteratorWith<V> for Literals<'a, V>
+where
+	V::Literal: Clone,
+{
+	type Item = Result<(V::Literal, Id), std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}
+
+pub struct Resources<'a, V: Vocabulary>(reservable_slab::Iter<'a, Resource<V>>);
+
+impl<'a, V: Vocabulary> Iterator for Resources<'a, V> {
+	type Item = Result<(Id, &'a Resource<V>), std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(|(id, r)| Ok((Id(id as u32), r)))
+	}
+}
+
+impl<'a, V: Vocabulary> IteratorWith<V> for Resources<'a, V> {
+	type Item = Result<(Id, &'a Resource<V>), std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
 	}
 }
 
@@ -119,6 +232,96 @@ impl<V: Vocabulary> Resource<V> {
 
 	pub fn is_anonymous(&self) -> bool {
 		self.as_iri.is_empty() && self.as_literal.is_empty()
+	}
+}
+
+impl<'a, V: Vocabulary> crate::interpretation::Resource<'a, V> for &'a Resource<V>
+where
+	V::Iri: Clone,
+	V::Literal: Clone,
+{
+	type Error = std::convert::Infallible;
+
+	type Iris = ResourceIris<'a, V>;
+	type Literals = ResourceLiterals<'a, V>;
+	type DifferentFrom = ResourceDifferentFrom<'a>;
+
+	fn as_iri(&self) -> Self::Iris {
+		ResourceIris(self.as_iri.iter())
+	}
+
+	fn as_literal(&self) -> Self::Literals {
+		ResourceLiterals(self.as_literal.iter())
+	}
+
+	fn different_from(&self) -> Self::DifferentFrom {
+		ResourceDifferentFrom(self.different_from.iter())
+	}
+}
+
+pub struct ResourceIris<'a, V: IriVocabulary>(hashbrown::hash_set::Iter<'a, V::Iri>);
+
+impl<'a, V: IriVocabulary> Iterator for ResourceIris<'a, V>
+where
+	V::Iri: Clone,
+{
+	type Item = Result<V::Iri, std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().cloned().map(Ok)
+	}
+}
+
+impl<'a, V: IriVocabulary> IteratorWith<V> for ResourceIris<'a, V>
+where
+	V::Iri: Clone,
+{
+	type Item = Result<V::Iri, std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}
+
+pub struct ResourceLiterals<'a, V: LiteralVocabulary>(hashbrown::hash_set::Iter<'a, V::Literal>);
+
+impl<'a, V: LiteralVocabulary> Iterator for ResourceLiterals<'a, V>
+where
+	V::Literal: Clone,
+{
+	type Item = Result<V::Literal, std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().cloned().map(Ok)
+	}
+}
+
+impl<'a, V: LiteralVocabulary> IteratorWith<V> for ResourceLiterals<'a, V>
+where
+	V::Literal: Clone,
+{
+	type Item = Result<V::Literal, std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
+	}
+}
+
+pub struct ResourceDifferentFrom<'a>(hashbrown::hash_set::Iter<'a, Id>);
+
+impl<'a> Iterator for ResourceDifferentFrom<'a> {
+	type Item = Result<Id, std::convert::Infallible>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().cloned().map(Ok)
+	}
+}
+
+impl<'a, V> IteratorWith<V> for ResourceDifferentFrom<'a> {
+	type Item = Result<Id, std::convert::Infallible>;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		self.next()
 	}
 }
 

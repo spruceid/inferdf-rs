@@ -63,12 +63,12 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 		};
 
 		// Find anonymous nodes and compute the dependency graph.
-		for (id, r) in self.interpretation().iter() {
+		for (id, r) in self.local_interpretation().iter() {
 			if r.is_anonymous() {
 				let mut successors = HashSet::new();
 
 				for (_, _, Meta(Signed(sign, quad), _)) in self
-					.dataset()
+					.local_dataset()
 					.matching(rdf_types::Triple(Some(id), None, None).into())
 				{
 					let p = ResourceNode::new(self, quad.1);
@@ -134,7 +134,7 @@ impl<V: Vocabulary, D: Module<V>, S> Builder<V, D, S> {
 			}
 		}
 
-		Ok(classification::Local { layers, classes })
+		Ok(classification::Local::new(layers, classes))
 	}
 }
 
@@ -215,7 +215,7 @@ pub(crate) enum ResourceNode {
 
 impl ResourceNode {
 	fn new<V: Vocabulary, D: Module<V>, S>(builder: &Builder<V, D, S>, id: Id) -> Self {
-		let r = builder.interpretation().get(id).unwrap();
+		let r = builder.local_interpretation().get(id).unwrap();
 		if r.is_anonymous() {
 			Self::Anonymous(id)
 		} else {

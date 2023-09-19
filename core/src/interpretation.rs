@@ -77,19 +77,19 @@ pub trait Interpretation<'a, V: Vocabulary>: Clone {
 	type Resource: Resource<'a, V, Error = Self::Error>;
 
 	/// Iterator over the interpreted resources.
-	/// 
+	///
 	/// Resources are ordered by identifier.
-	type Resources: IteratorWith<V, Item = Result<(Id, Self::Resource), Self::Error>>;// ...
+	type Resources: IteratorWith<V, Item = Result<(Id, Self::Resource), Self::Error>>; // ...
 
 	/// Iterator over the IRI interpretations.
-	/// 
+	///
 	/// There is no guaranty over the order in which IRIs are presented, and
 	/// the same IRI may be presented multiple times. However if it is presented
 	/// multiple times, it will be with the same interpretation.
 	type Iris: IteratorWith<V, Item = Result<(V::Iri, Id), Self::Error>>;
 
 	/// Iterator over the literal interpretations.
-	/// 
+	///
 	/// There is no guaranty over the order in which literals are presented,
 	/// and the same literal may be presented multiple times. However if it is
 	/// presented multiple times, it will be with the same interpretation.
@@ -103,7 +103,7 @@ pub trait Interpretation<'a, V: Vocabulary>: Clone {
 	fn get(&self, id: Id) -> Result<Option<Self::Resource>, Self::Error>;
 
 	/// Returns an iterator over the IRI interpretations.
-	/// 
+	///
 	/// There is no guaranty over the order in which IRIs are presented, and
 	/// the same IRI may be presented multiple times. However if it is presented
 	/// multiple times, it will be with the same interpretation.
@@ -116,7 +116,7 @@ pub trait Interpretation<'a, V: Vocabulary>: Clone {
 	) -> Result<Option<Id>, Self::Error>;
 
 	/// Returns an iterator over the literal interpretations.
-	/// 
+	///
 	/// There is no guaranty over the order in which literals are presented,
 	/// and the same literal may be presented multiple times. However if it is
 	/// presented multiple times, it will be with the same interpretation.
