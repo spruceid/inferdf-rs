@@ -163,7 +163,7 @@ where
 	for entry in named_graphs {
 		named_graph_encoder.push(vocabulary, &entry)?;
 	}
-	let named_graphs = named_graph_encoder.end();
+	let named_graphs = named_graph_encoder.end()?;
 
 	// Classification.
 	let mut groups_by_id = Vec::new();
@@ -283,7 +283,7 @@ where
 		result?;
 		index_map.insert(i, j);
 	}
-	let facts = facts_encoder.end();
+	let facts = facts_encoder.end()?;
 
 	let mut resource_entries = Vec::new();
 	let mut module_resources = graph.resources();

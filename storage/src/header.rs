@@ -22,7 +22,8 @@ pub use version::Version;
 
 use inferdf_core::Id;
 
-#[derive(Paged)]
+#[derive(Paged, Educe)]
+#[educe(Debug)]
 pub struct Header<V: Vocabulary> {
 	pub tag: Tag,
 	pub version: Version,
@@ -39,7 +40,8 @@ impl<V: Vocabulary> Header<V> {
 	}
 }
 
-#[derive(Paged)]
+#[derive(Paged, Educe)]
+#[educe(Debug)]
 pub struct Interpretation<V: Vocabulary> {
 	pub iris: Section<IriEntry<V>>,
 	pub literals: Section<LiteralEntry<V>>,
@@ -251,25 +253,25 @@ impl<'a> paged::cache::Binder<'a, UnboundRef<InterpretedResource>, UnboundSliceI
 	}
 }
 
-#[derive(Paged)]
+#[derive(Debug, Paged)]
 pub struct Dataset {
 	pub default_graph: GraphDescription,
 	pub named_graphs: Section<Graph>,
 }
 
-#[derive(Paged)]
+#[derive(Debug, Paged)]
 pub struct Graph {
 	pub id: Id,
 	pub description: GraphDescription,
 }
 
-#[derive(Clone, Copy, Paged)]
+#[derive(Debug, Clone, Copy, Paged)]
 pub struct GraphDescription {
 	pub facts: Section<GraphFact>,
 	pub resources: Section<GraphResource>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Paged)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Paged)]
 pub struct Triple(pub Id, pub Id, pub Id);
 
 impl From<Triple> for inferdf_core::Triple {
@@ -284,7 +286,7 @@ impl From<inferdf_core::Triple> for Triple {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Paged)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Paged)]
 pub struct GraphFact {
 	pub triple: Signed<Triple>,
 	pub cause: Cause,
@@ -296,7 +298,7 @@ impl From<GraphFact> for inferdf_core::GraphFact {
 	}
 }
 
-#[derive(Paged)]
+#[derive(Debug, Paged)]
 #[paged(heap)]
 pub struct GraphResource {
 	pub id: Id,
@@ -344,7 +346,7 @@ impl<'a> paged::cache::Binder<'a, UnboundRef<GraphResource>, UnboundSliceIter<u3
 	}
 }
 
-#[derive(Paged)]
+#[derive(Debug, Paged)]
 pub struct Classification {
 	pub groups_by_desc: Section<GroupByDesc>,
 	pub groups_by_id: Section<GroupById>,

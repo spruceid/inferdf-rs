@@ -11,7 +11,12 @@ use inferdf_inference::{
 use locspan::Meta;
 use nquads_syntax::Parse;
 use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral, RdfDisplay};
-use std::{fs, io::BufWriter, path::PathBuf, process::ExitCode};
+use std::{
+	fs,
+	io::{BufReader, BufWriter},
+	path::PathBuf,
+	process::ExitCode,
+};
 use yansi::Paint;
 
 #[derive(Parser)]
@@ -20,17 +25,23 @@ struct Args {
 	/// Input files.
 	inputs: Vec<PathBuf>,
 
+	/// Dependency module.
+	#[arg(short)]
+	dependencies: Vec<PathBuf>,
+
 	/// Input semantics files.
 	#[arg(short)]
 	semantics: Vec<PathBuf>,
 
 	/// Turn debugging information on.
-	#[arg(short, long, action = clap::ArgAction::Count)]
-	debug: u8,
+	#[arg(short, long = "verbose", action = clap::ArgAction::Count)]
+	verbosity: u8,
 
+	/// Output module file path.
 	#[arg(short, long, default_value = "out.brdf")]
 	output: PathBuf,
 
+	/// Output module page size.
 	#[arg(long, default_value = "4096")]
 	page_size: u32,
 }
@@ -39,13 +50,21 @@ fn main() -> ExitCode {
 	let args = Args::parse();
 
 	stderrlog::new()
-		.verbosity(args.debug as usize)
+		.verbosity(args.verbosity as usize)
 		.init()
 		.expect("unable to initialize logger");
 
 	let mut vocabulary: IndexVocabulary = Default::default();
 
-	let dependencies: Vec<inferdf_storage::Module<IndexVocabulary, fs::File>> = Vec::new();
+	let mut dependencies: Vec<inferdf_storage::Module<IndexVocabulary, BufReader<fs::File>>> =
+		Vec::with_capacity(args.dependencies.len());
+	for path in args.dependencies {
+		let input = std::fs::File::open(path).expect("unable to read file");
+		let buffered_input = BufReader::new(input);
+		let module =
+			inferdf_storage::Module::new(buffered_input).expect("unable to read BRDF module");
+		dependencies.push(module)
+	}
 
 	let mut interpretation = BuilderInterpretation::new(module::Composition::new(dependencies));
 

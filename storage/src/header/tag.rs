@@ -5,6 +5,7 @@ use std::io;
 pub const TAG: [u8; 4] = [b'B', b'R', b'D', b'F'];
 
 /// Header tag, used to recognize the file format.
+#[derive(Debug)]
 pub struct Tag;
 
 impl EncodeSized for Tag {

@@ -5,6 +5,7 @@ use std::io;
 pub const VERSION: u32 = 0;
 
 /// Version number.
+#[derive(Debug)]
 pub struct Version;
 
 impl EncodeSized for Version {
