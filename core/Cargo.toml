@@ -18,7 +18,7 @@ im = "15.1.0"
 contextual = "0.1.6"
 serde.workspace = true
 thiserror.workspace = true
-paged.workspace = true
+paged = { workspace = true, features = ["derive"] }
 smallvec = "1.11.0"
 normal-form.workspace = true
 appendlist = "1.4.0"

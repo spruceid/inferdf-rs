@@ -3,6 +3,7 @@ members = [
 	"core",
 	"storage",
 	"inference",
+	"rdfs",
 	"cli"
 ]
 
@@ -17,6 +18,7 @@ edition = "2021"
 inferdf-core = { path = "core" }
 inferdf-inference = { path = "inference" }
 inferdf-storage = { path = "storage" }
+inferdf-rdfs = { path = "rdfs" }
 log = "0.4.17"
 rdf-types = { version = "0.16", features = ["meta", "contextual", "serde"] }
 nquads-syntax = "0.15.0"
@@ -31,3 +33,6 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.40"
 normal-form = "0.1.1"
 paged = { path = "/home/timothee/Projets/utils/data-structures/paged/paged" }
+clap = { version = "4.0", features = ["derive"] }
+stderrlog = "0.5.4"
+codespan-reporting = "0.11.1"

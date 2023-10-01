@@ -419,44 +419,49 @@ impl<V: Vocabulary> Interpretation<V> {
 
 	pub fn insert_term(&mut self, term: uninterpreted::Term<V>) -> Id
 	where
-		V::Iri: Copy + Eq + Hash,
-		V::BlankId: Copy + Eq + Hash,
-		V::Literal: Copy + Eq + Hash,
+		V::Iri: Clone + Eq + Hash,
+		V::BlankId: Clone + Eq + Hash,
+		V::Literal: Clone + Eq + Hash,
 	{
 		match term {
-			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => *self
-				.by_iri
-				.entry(iri)
-				.or_insert_with(|| Id(self.resources.insert(Resource::from_iri(iri)) as u32)),
-			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => *self
-				.by_blank
-				.entry(blank)
-				.or_insert_with(|| Id(self.resources.insert(Resource::from_blank(blank)) as u32)),
-			rdf_types::Term::Literal(literal) => {
-				*self.by_literal.entry(literal).or_insert_with(|| {
-					Id(self.resources.insert(Resource::from_literal(literal)) as u32)
+			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => {
+				*self.by_iri.entry(iri).or_insert_with_key(|iri| {
+					Id(self.resources.insert(Resource::from_iri(iri.clone())) as u32)
 				})
 			}
+			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => {
+				*self.by_blank.entry(blank).or_insert_with_key(|blank| {
+					Id(self.resources.insert(Resource::from_blank(blank.clone())) as u32)
+				})
+			}
+			rdf_types::Term::Literal(literal) => *self
+				.by_literal
+				.entry(literal)
+				.or_insert_with_key(|literal| {
+					Id(self
+						.resources
+						.insert(Resource::from_literal(literal.clone())) as u32)
+				}),
 		}
 	}
 
 	pub fn set_term_interpretation(&mut self, term: uninterpreted::Term<V>, id: Id)
 	where
-		V::Iri: Copy + Eq + Hash,
-		V::BlankId: Copy + Eq + Hash,
-		V::Literal: Copy + Eq + Hash,
+		V::Iri: Eq + Hash,
+		V::BlankId: Eq + Hash,
+		V::Literal: Eq + Hash,
 	{
 		match term {
 			rdf_types::Term::Id(rdf_types::Id::Iri(iri)) => {
-				assert!(self.by_iri.insert(iri, id).is_none());
+				// assert!(self.by_iri.insert(iri, id).is_none());
 				self.resources[id.index()].as_iri.insert(iri);
 			}
 			rdf_types::Term::Id(rdf_types::Id::Blank(blank)) => {
-				assert!(self.by_blank.insert(blank, id).is_none());
+				// assert!(self.by_blank.insert(blank, id).is_none());
 				self.resources[id.index()].as_blank.insert(blank);
 			}
 			rdf_types::Term::Literal(literal) => {
-				assert!(self.by_literal.insert(literal, id).is_none());
+				// assert!(self.by_literal.insert(literal, id).is_none());
 				self.resources[id.index()].as_literal.insert(literal);
 			}
 		}

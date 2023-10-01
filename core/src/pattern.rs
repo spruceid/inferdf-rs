@@ -32,6 +32,13 @@ impl<T> IdOrVar<T> {
 			Self::Var(x) => IdOrVarIter::Var(Some(x)),
 		}
 	}
+
+	pub fn is_id_or(&self, f: impl FnOnce(usize) -> bool) -> bool {
+		match self {
+			Self::Id(_) => true,
+			Self::Var(x) => f(*x),
+		}
+	}
 }
 
 impl IdOrVar {
@@ -88,22 +95,6 @@ impl<V: Vocabulary> Interpret<V> for IdOrVar<uninterpreted::Term<V>> {
 
 pub type Pattern<T = Id> = rdf_types::Triple<IdOrVar<T>, IdOrVar<T>, IdOrVar<T>>;
 
-impl<V: Vocabulary> Interpret<V> for Pattern<uninterpreted::Term<V>> {
-	type Interpreted = Pattern;
-
-	fn interpret<'a, I: InterpretationMut<'a, V>>(
-		self,
-		vocabulary: &mut V,
-		interpretation: &mut I,
-	) -> Result<Self::Interpreted, I::Error> {
-		Ok(rdf_types::Triple(
-			self.0.interpret(vocabulary, interpretation)?,
-			self.1.interpret(vocabulary, interpretation)?,
-			self.2.interpret(vocabulary, interpretation)?,
-		))
-	}
-}
-
 #[derive(Debug, Clone)]
 pub enum IdOrVarIter<T = Id> {
 	Id(T),
@@ -122,43 +113,43 @@ impl<I: Iterator> Iterator for IdOrVarIter<I> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Canonical {
-	AnySubject(AnySubject),
-	GivenSubject(Id, GivenSubject),
+pub enum Canonical<T = Id> {
+	AnySubject(AnySubject<T>),
+	GivenSubject(T, GivenSubject<T>),
 }
 
-impl From<Triple> for Canonical {
-	fn from(value: Triple) -> Self {
+impl<T> From<rdf_types::Triple<T, T, T>> for Canonical<T> {
+	fn from(value: rdf_types::Triple<T, T, T>) -> Self {
 		Self::from_triple(value)
 	}
 }
 
-impl From<rdf_types::Triple<Option<Id>, Option<Id>, Option<Id>>> for Canonical {
-	fn from(value: rdf_types::Triple<Option<Id>, Option<Id>, Option<Id>>) -> Self {
+impl<T> From<rdf_types::Triple<Option<T>, Option<T>, Option<T>>> for Canonical<T> {
+	fn from(value: rdf_types::Triple<Option<T>, Option<T>, Option<T>>) -> Self {
 		Self::from_option_triple(value)
 	}
 }
 
-impl From<Pattern> for Canonical {
-	fn from(value: Pattern) -> Self {
+impl<T> From<Pattern<T>> for Canonical<T> {
+	fn from(value: Pattern<T>) -> Self {
 		Self::from_pattern(value)
 	}
 }
 
-impl From<Canonical> for Pattern {
-	fn from(value: Canonical) -> Self {
-		let s = match value.subject() {
+impl<T: Clone> From<Canonical<T>> for Pattern<T> {
+	fn from(value: Canonical<T>) -> Self {
+		let s = match value.subject().cloned() {
 			PatternSubject::Any => IdOrVar::Var(0),
 			PatternSubject::Given(id) => IdOrVar::Id(id),
 		};
 
-		let p = match value.predicate() {
+		let p = match value.predicate().cloned() {
 			PatternPredicate::Any => IdOrVar::Var(1),
 			PatternPredicate::SameAsSubject => IdOrVar::Var(0),
 			PatternPredicate::Given(id) => IdOrVar::Id(id),
 		};
 
-		let o = match value.object() {
+		let o = match value.object().cloned() {
 			PatternObject::Any => IdOrVar::Var(2),
 			PatternObject::SameAsSubject => IdOrVar::Var(0),
 			PatternObject::SameAsPredicate => IdOrVar::Var(1),
@@ -169,8 +160,8 @@ impl From<Canonical> for Pattern {
 	}
 }
 
-impl Canonical {
-	pub fn from_triple(triple: Triple) -> Self {
+impl<T> Canonical<T> {
+	pub fn from_triple(triple: rdf_types::Triple<T, T, T>) -> Self {
 		Self::GivenSubject(
 			triple.0,
 			GivenSubject::GivenPredicate(
@@ -180,16 +171,14 @@ impl Canonical {
 		)
 	}
 
-	pub fn from_option_triple(
-		triple: rdf_types::Triple<Option<Id>, Option<Id>, Option<Id>>,
-	) -> Self {
+	pub fn from_option_triple(triple: rdf_types::Triple<Option<T>, Option<T>, Option<T>>) -> Self {
 		match triple.0 {
 			Some(s) => Self::GivenSubject(s, GivenSubject::from_option_triple(triple.1, triple.2)),
 			None => Self::AnySubject(AnySubject::from_option_triple(triple.1, triple.2)),
 		}
 	}
 
-	pub fn from_pattern(pattern: Pattern) -> Self {
+	pub fn from_pattern(pattern: Pattern<T>) -> Self {
 		match pattern.0 {
 			IdOrVar::Id(s) => {
 				Self::GivenSubject(s, GivenSubject::from_pattern(pattern.1, pattern.2))
@@ -198,21 +187,21 @@ impl Canonical {
 		}
 	}
 
-	pub fn subject(&self) -> PatternSubject {
+	pub fn subject(&self) -> PatternSubject<&T> {
 		match self {
 			Self::AnySubject(_) => PatternSubject::Any,
-			Self::GivenSubject(id, _) => PatternSubject::Given(*id),
+			Self::GivenSubject(id, _) => PatternSubject::Given(id),
 		}
 	}
 
-	pub fn predicate(&self) -> PatternPredicate {
+	pub fn predicate(&self) -> PatternPredicate<&T> {
 		match self {
 			Self::AnySubject(t) => t.predicate(),
 			Self::GivenSubject(_, t) => t.predicate(),
 		}
 	}
 
-	pub fn object(&self) -> PatternObject {
+	pub fn object(&self) -> PatternObject<&T> {
 		match self {
 			Self::AnySubject(t) => t.object(),
 			Self::GivenSubject(_, t) => t.object(),
@@ -221,44 +210,48 @@ impl Canonical {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PatternSubject {
+pub enum PatternSubject<T = Id> {
 	Any,
-	Given(Id),
+	Given(T),
 }
 
-impl PatternSubject {
-	pub fn id(&self) -> Option<Id> {
-		match self {
-			Self::Any => None,
-			Self::Given(id) => Some(*id),
-		}
-	}
-
-	pub fn into_id(self) -> Option<Id> {
+impl<T> PatternSubject<T> {
+	pub fn id(&self) -> Option<&T> {
 		match self {
 			Self::Any => None,
 			Self::Given(id) => Some(id),
+		}
+	}
+
+	pub fn into_id(self) -> Option<T> {
+		match self {
+			Self::Any => None,
+			Self::Given(id) => Some(id),
+		}
+	}
+}
+
+impl<'a, T> PatternSubject<&'a T> {
+	pub fn cloned(self) -> PatternSubject<T>
+	where
+		T: Clone,
+	{
+		match self {
+			Self::Any => PatternSubject::Any,
+			Self::Given(t) => PatternSubject::Given(t.clone()),
 		}
 	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PatternPredicate {
+pub enum PatternPredicate<T = Id> {
 	Any,
 	SameAsSubject,
-	Given(Id),
+	Given(T),
 }
 
-impl PatternPredicate {
-	pub fn id(&self) -> Option<Id> {
-		match self {
-			Self::Any => None,
-			Self::SameAsSubject => None,
-			Self::Given(id) => Some(*id),
-		}
-	}
-
-	pub fn into_id(self) -> Option<Id> {
+impl<T> PatternPredicate<T> {
+	pub fn id(&self) -> Option<&T> {
 		match self {
 			Self::Any => None,
 			Self::SameAsSubject => None,
@@ -266,6 +259,29 @@ impl PatternPredicate {
 		}
 	}
 
+	pub fn into_id(self) -> Option<T> {
+		match self {
+			Self::Any => None,
+			Self::SameAsSubject => None,
+			Self::Given(id) => Some(id),
+		}
+	}
+}
+
+impl<'a, T> PatternPredicate<&'a T> {
+	pub fn cloned(self) -> PatternPredicate<T>
+	where
+		T: Clone,
+	{
+		match self {
+			Self::Any => PatternPredicate::Any,
+			Self::SameAsSubject => PatternPredicate::SameAsSubject,
+			Self::Given(t) => PatternPredicate::Given(t.clone()),
+		}
+	}
+}
+
+impl PatternPredicate {
 	pub fn filter_triple(&self, triple: Triple) -> bool {
 		match self {
 			Self::Any => true,
@@ -276,28 +292,44 @@ impl PatternPredicate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PatternObject {
+pub enum PatternObject<T = Id> {
 	Any,
 	SameAsSubject,
 	SameAsPredicate,
-	Given(Id),
+	Given(T),
 }
 
-impl PatternObject {
-	pub fn id(&self) -> Option<Id> {
-		match self {
-			Self::Given(id) => Some(*id),
-			_ => None,
-		}
-	}
-
-	pub fn into_id(self) -> Option<Id> {
+impl<T> PatternObject<T> {
+	pub fn id(&self) -> Option<&T> {
 		match self {
 			Self::Given(id) => Some(id),
 			_ => None,
 		}
 	}
 
+	pub fn into_id(self) -> Option<T> {
+		match self {
+			Self::Given(id) => Some(id),
+			_ => None,
+		}
+	}
+}
+
+impl<'a, T> PatternObject<&'a T> {
+	pub fn cloned(self) -> PatternObject<T>
+	where
+		T: Clone,
+	{
+		match self {
+			Self::Any => PatternObject::Any,
+			Self::SameAsSubject => PatternObject::SameAsSubject,
+			Self::SameAsPredicate => PatternObject::SameAsPredicate,
+			Self::Given(t) => PatternObject::Given(t.clone()),
+		}
+	}
+}
+
+impl PatternObject {
 	pub fn filter_triple(&self, triple: Triple) -> bool {
 		match self {
 			Self::Any => true,
@@ -309,21 +341,21 @@ impl PatternObject {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AnySubject {
-	AnyPredicate(AnySubjectAnyPredicate),
-	SameAsSubject(AnySubjectGivenPredicate),
-	GivenPredicate(Id, AnySubjectGivenPredicate),
+pub enum AnySubject<T = Id> {
+	AnyPredicate(AnySubjectAnyPredicate<T>),
+	SameAsSubject(AnySubjectGivenPredicate<T>),
+	GivenPredicate(T, AnySubjectGivenPredicate<T>),
 }
 
-impl AnySubject {
-	pub fn from_option_triple(p: Option<Id>, o: Option<Id>) -> Self {
+impl<T> AnySubject<T> {
+	pub fn from_option_triple(p: Option<T>, o: Option<T>) -> Self {
 		match p {
 			Some(p) => Self::GivenPredicate(p, AnySubjectGivenPredicate::from_option(o)),
 			None => Self::AnyPredicate(AnySubjectAnyPredicate::from_option(o)),
 		}
 	}
 
-	pub fn from_pattern(s: usize, p: IdOrVar, o: IdOrVar) -> Self {
+	pub fn from_pattern(s: usize, p: IdOrVar<T>, o: IdOrVar<T>) -> Self {
 		match p {
 			IdOrVar::Id(p) => Self::GivenPredicate(p, AnySubjectGivenPredicate::from_pattern(s, o)),
 			IdOrVar::Var(p) => {
@@ -336,15 +368,15 @@ impl AnySubject {
 		}
 	}
 
-	pub fn predicate(&self) -> PatternPredicate {
+	pub fn predicate(&self) -> PatternPredicate<&T> {
 		match self {
 			Self::AnyPredicate(_) => PatternPredicate::Any,
 			Self::SameAsSubject(_) => PatternPredicate::SameAsSubject,
-			Self::GivenPredicate(id, _) => PatternPredicate::Given(*id),
+			Self::GivenPredicate(id, _) => PatternPredicate::Given(id),
 		}
 	}
 
-	pub fn object(&self) -> PatternObject {
+	pub fn object(&self) -> PatternObject<&T> {
 		match self {
 			Self::AnyPredicate(t) => t.object(),
 			Self::SameAsSubject(t) => t.object(),
@@ -354,22 +386,22 @@ impl AnySubject {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AnySubjectAnyPredicate {
+pub enum AnySubjectAnyPredicate<T = Id> {
 	AnyObject,
 	SameAsSubject,
 	SameAsPredicate,
-	GivenObject(Id),
+	GivenObject(T),
 }
 
-impl AnySubjectAnyPredicate {
-	pub fn from_option(o: Option<Id>) -> Self {
+impl<T> AnySubjectAnyPredicate<T> {
+	pub fn from_option(o: Option<T>) -> Self {
 		match o {
 			Some(o) => Self::GivenObject(o),
 			None => Self::AnyObject,
 		}
 	}
 
-	pub fn from_pattern(s: usize, p: usize, o: IdOrVar) -> Self {
+	pub fn from_pattern(s: usize, p: usize, o: IdOrVar<T>) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),
 			IdOrVar::Var(o) => {
@@ -384,32 +416,32 @@ impl AnySubjectAnyPredicate {
 		}
 	}
 
-	pub fn object(&self) -> PatternObject {
+	pub fn object(&self) -> PatternObject<&T> {
 		match self {
 			Self::AnyObject => PatternObject::Any,
 			Self::SameAsSubject => PatternObject::SameAsSubject,
 			Self::SameAsPredicate => PatternObject::SameAsPredicate,
-			Self::GivenObject(id) => PatternObject::Given(*id),
+			Self::GivenObject(id) => PatternObject::Given(id),
 		}
 	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AnySubjectGivenPredicate {
+pub enum AnySubjectGivenPredicate<T = Id> {
 	AnyObject,
 	SameAsSubject,
-	GivenObject(Id),
+	GivenObject(T),
 }
 
-impl AnySubjectGivenPredicate {
-	pub fn from_option(o: Option<Id>) -> Self {
+impl<T> AnySubjectGivenPredicate<T> {
+	pub fn from_option(o: Option<T>) -> Self {
 		match o {
 			Some(o) => Self::GivenObject(o),
 			None => Self::AnyObject,
 		}
 	}
 
-	pub fn from_pattern(s: usize, o: IdOrVar) -> Self {
+	pub fn from_pattern(s: usize, o: IdOrVar<T>) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),
 			IdOrVar::Var(o) => {
@@ -422,44 +454,44 @@ impl AnySubjectGivenPredicate {
 		}
 	}
 
-	pub fn object(&self) -> PatternObject {
+	pub fn object(&self) -> PatternObject<&T> {
 		match self {
 			Self::AnyObject => PatternObject::Any,
 			Self::SameAsSubject => PatternObject::SameAsSubject,
-			Self::GivenObject(id) => PatternObject::Given(*id),
+			Self::GivenObject(id) => PatternObject::Given(id),
 		}
 	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum GivenSubject {
-	AnyPredicate(GivenSubjectAnyPredicate),
-	GivenPredicate(Id, GivenSubjectGivenPredicate),
+pub enum GivenSubject<T = Id> {
+	AnyPredicate(GivenSubjectAnyPredicate<T>),
+	GivenPredicate(T, GivenSubjectGivenPredicate<T>),
 }
 
-impl GivenSubject {
-	pub fn from_option_triple(p: Option<Id>, o: Option<Id>) -> Self {
+impl<T> GivenSubject<T> {
+	pub fn from_option_triple(p: Option<T>, o: Option<T>) -> Self {
 		match p {
 			Some(p) => Self::GivenPredicate(p, GivenSubjectGivenPredicate::from_option(o)),
 			None => Self::AnyPredicate(GivenSubjectAnyPredicate::from_option(o)),
 		}
 	}
 
-	pub fn from_pattern(p: IdOrVar, o: IdOrVar) -> Self {
+	pub fn from_pattern(p: IdOrVar<T>, o: IdOrVar<T>) -> Self {
 		match p {
 			IdOrVar::Id(p) => Self::GivenPredicate(p, GivenSubjectGivenPredicate::from_pattern(o)),
 			IdOrVar::Var(p) => Self::AnyPredicate(GivenSubjectAnyPredicate::from_pattern(p, o)),
 		}
 	}
 
-	pub fn predicate(&self) -> PatternPredicate {
+	pub fn predicate(&self) -> PatternPredicate<&T> {
 		match self {
 			Self::AnyPredicate(_) => PatternPredicate::Any,
-			Self::GivenPredicate(id, _) => PatternPredicate::Given(*id),
+			Self::GivenPredicate(id, _) => PatternPredicate::Given(id),
 		}
 	}
 
-	pub fn object(&self) -> PatternObject {
+	pub fn object(&self) -> PatternObject<&T> {
 		match self {
 			Self::AnyPredicate(t) => t.object(),
 			Self::GivenPredicate(_, t) => t.object(),
@@ -468,21 +500,21 @@ impl GivenSubject {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum GivenSubjectAnyPredicate {
+pub enum GivenSubjectAnyPredicate<T = Id> {
 	AnyObject,
 	SameAsPredicate,
-	GivenObject(Id),
+	GivenObject(T),
 }
 
-impl GivenSubjectAnyPredicate {
-	pub fn from_option(o: Option<Id>) -> Self {
+impl<T> GivenSubjectAnyPredicate<T> {
+	pub fn from_option(o: Option<T>) -> Self {
 		match o {
 			Some(o) => Self::GivenObject(o),
 			None => Self::AnyObject,
 		}
 	}
 
-	pub fn from_pattern(p: usize, o: IdOrVar) -> Self {
+	pub fn from_pattern(p: usize, o: IdOrVar<T>) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),
 			IdOrVar::Var(o) => {
@@ -495,40 +527,40 @@ impl GivenSubjectAnyPredicate {
 		}
 	}
 
-	pub fn object(&self) -> PatternObject {
+	pub fn object(&self) -> PatternObject<&T> {
 		match self {
 			Self::AnyObject => PatternObject::Any,
 			Self::SameAsPredicate => PatternObject::SameAsPredicate,
-			Self::GivenObject(id) => PatternObject::Given(*id),
+			Self::GivenObject(id) => PatternObject::Given(id),
 		}
 	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum GivenSubjectGivenPredicate {
+pub enum GivenSubjectGivenPredicate<T = Id> {
 	AnyObject,
-	GivenObject(Id),
+	GivenObject(T),
 }
 
-impl GivenSubjectGivenPredicate {
-	pub fn from_option(o: Option<Id>) -> Self {
+impl<T> GivenSubjectGivenPredicate<T> {
+	pub fn from_option(o: Option<T>) -> Self {
 		match o {
 			Some(o) => Self::GivenObject(o),
 			None => Self::AnyObject,
 		}
 	}
 
-	pub fn from_pattern(o: IdOrVar) -> Self {
+	pub fn from_pattern(o: IdOrVar<T>) -> Self {
 		match o {
 			IdOrVar::Id(o) => Self::GivenObject(o),
 			IdOrVar::Var(_) => Self::AnyObject,
 		}
 	}
 
-	pub fn object(&self) -> PatternObject {
+	pub fn object(&self) -> PatternObject<&T> {
 		match self {
 			Self::AnyObject => PatternObject::Any,
-			Self::GivenObject(id) => PatternObject::Given(*id),
+			Self::GivenObject(id) => PatternObject::Given(id),
 		}
 	}
 }
@@ -567,6 +599,14 @@ impl PatternSubstitution {
 
 	pub fn get_or_insert_with(&mut self, x: usize, f: impl FnOnce() -> Id) -> Id {
 		*self.0.entry(x).or_insert_with(f)
+	}
+
+	pub fn to_vec(&self) -> Vec<Id> {
+		let mut result = Vec::with_capacity(self.0.len());
+		for i in 0..self.0.len() {
+			result.push(*self.0.get(&i).unwrap())
+		}
+		result
 	}
 
 	pub fn into_vec(self) -> Vec<Id> {

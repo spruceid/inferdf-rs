@@ -68,8 +68,8 @@ pub trait Graph<'a, V>: Clone {
 		Ok(Matching {
 			inner: RawMatching::new((*self).clone(), pattern)?,
 			constraints: MatchingConstraints {
-				predicate: pattern.predicate(),
-				object: pattern.object(),
+				predicate: pattern.predicate().cloned(),
+				object: pattern.object().cloned(),
 				sign,
 			},
 		})
@@ -223,9 +223,9 @@ fn get_resource_opt<'a, V, G: Graph<'a, V>>(
 
 impl<'a, V, G: Graph<'a, V>> RawMatching<'a, V, G> {
 	fn new(graph: G, pattern: pattern::Canonical) -> Result<Self, G::Error> {
-		let s = pattern.subject().id();
-		let p = pattern.predicate().id();
-		let o = pattern.object().id();
+		let s = pattern.subject().cloned().into_id();
+		let p = pattern.predicate().cloned().into_id();
+		let o = pattern.object().cloned().into_id();
 
 		if s.is_none() && p.is_none() && o.is_none() {
 			Ok(Self::All(graph.triples()))

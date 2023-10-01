@@ -1,41 +1,63 @@
 #! The TreeLDR RDF semantics.
+base <https://treeldr.org/semantics/tldr/>
+prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+prefix tldr: <https://treeldr.org/vocabulary#>
 
-## Fields sharing a property are the same.
-##
-## Since `tldr:format` is a functional property,
-## fields layouts will be merged approprietly.
-tldr:uniqueFieldName {
-	?layout tldr:field ?field1 .
-	?layout tldr:field ?field2 .
-	?field1 tldr:fieldFor ?prop .
-	?field2 tldr:fieldFor ?prop .
-} => {`
-	?field1 = ?field2 .
-}
+# Structure layout semantics.
+group Structure {
+	## Fields sharing a property are the same.
+	rule FieldUniqueByProperty {
+		?layout tldr:field ?field1 .
+		?layout tldr:field ?field2 .
+		?field1 tldr:fieldFor ?prop .
+		?field2 tldr:fieldFor ?prop .
+	} => {
+		?field1 = ?field2 .
+	}
 
-## Fields sharing a name are the same.
-##
-## Since `tldr:format` is a functional property,
-## fields layouts will be merged approprietly.
-tldr:uniqueFieldName {
-	?layout tldr:field ?field1 .
-	?layout tldr:field ?field2 .
-	?field1 tldr:name ?name .
-	?field2 tldr:name ?name .
-} => {
-	?field1 = ?field2 .
-}
+	## Fields sharing a name are the same.
+	rule FieldUniqueByName {
+		?layout tldr:field ?field1 .
+		?layout tldr:field ?field2 .
+		?field1 tldr:name ?name .
+		?field2 tldr:name ?name .
+	} => {
+		?field1 = ?field2 .
+	}
 
-## Layout Intersection.
-tldr:intersectionOf {
-	## Structure intersection.
-	tldr:structIntersection {
-		## Intersect field by name.
-		tldr:structIntersectionByName {
-			?x tldr:intersectionOf ?layout .
-			?layout tldr:field ?field .
+	## Union.
+	group Union {
+		rule Format forall ?item {} exists ?field ?format {
+			?layout tldr:unionOf ?item .
+			?item tldr:field ?field .
 			?field tldr:name ?name .
 			?field tldr:format ?format .
+		} => {
+			?layout tldr:field ?targetField .
+			?targetField tldr:name ?name .
+			?targetField tldr:format ?targetFormat .
+			?targetFormat tldr:unionOf ?format .
+		}
+
+		rule Property {
+			?layout tldr:unionOf ?item .
+			?item tldr:field ?field .
+			?field tldr:name ?name .
+			?field tldr:property ?prop .
+			?layout tldr:field ?targetField .
+			?targetField tldr:name ?name .
+		} => {
+			?targetField tldr:property ?prop .
+		}
+	}
+
+	group Intersection {
+		rule Format {
+			?layout tldr:intersectionOf ?item .
+			?item tldr:field ?field .
+			?field tldr:name ?name .
+			?field tldr:format ?field .
 		} => {
 			?layout tldr:field ?targetField .
 			?targetField tldr:name ?name .
@@ -43,17 +65,65 @@ tldr:intersectionOf {
 			?targetFormat tldr:intersectionOf ?format .
 		}
 
-		## Intersect field by property.
-		tldr:structIntersectionByName {
-			?x tldr:intersectionOf ?layout .
-			?layout tldr:field ?field .
-			?field tldr:fieldFor ?prop .
-			?field tldr:format ?format .
-		} => {
+		rule Property {
+			?layout tldr:intersectionOf ?item .
+			?item tldr:field ?field .
+			?field tldr:name ?name .
+			?field tldr:property ?prop .
 			?layout tldr:field ?targetField .
-			?targetField tldr:fieldFor ?prop .
-			?targetField tldr:format ?targetFormat .
+			?targetField tldr:name ?name .
+		} => {
+			?targetField tldr:property ?prop .
+		}
+	}
+}
+
+## Enumeration layout semantics.
+group Enumeration {
+	## Union.
+	group Union {
+		rule ByFormat {
+			?layout tldr:unionOf ?item .
+			?item tldr:variant ?variant .
+			?variant tldr:name ?name .
+			?variant tldr:format ?format .
+		} => {
+			?layout tldr:variant ?targetVariant .
+			?targetVariant tldr:name ?name .
+			?targetVariant tldr:format ?targetFormat .
+			?targetFormat tldr:unionOf ?format .
+		}
+	}
+
+	## Intersection.
+	group Intersection {
+		## Intersect format-variants.
+		rule ByFormat forall ?item {
+			?layout tldr:intersectionOf ?item .
+		} exists ?variant ?format {
+			?item tldr:variant ?variant .
+			?variant tldr:name ?name .
+			?variant tldr:format ?format .
+		} => {
+			?layout tldr:variant ?targetVariant .
+			?targetVariant tldr:name ?name .
+			?targetVariant tldr:format ?targetFormat .
 			?targetFormat tldr:intersectionOf ?format .
+		}
+
+		## Intersect value-variants.
+		## 
+		## Value-variants sharing the same name must have the same value.
+		rule ByValue forall ?item {
+			?layout tldr:intersectionOf ?item .
+		} exists ?variant ?value {
+			?item tldr:variant ?variant .
+			?variant tldr:name ?name .
+			?variant tldr:value ?value .
+		} => {
+			?layout tldr:variant ?targetVariant .
+			?targetVariant tldr:name ?name .
+			?targetVariant tldr:value ?value .
 		}
 	}
 }

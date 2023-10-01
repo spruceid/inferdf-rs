@@ -244,6 +244,24 @@ pub trait Interpret<V: Vocabulary> {
 	) -> Result<Self::Interpreted, I::Error>;
 }
 
+impl<V: Vocabulary, S: Interpret<V>, P: Interpret<V>, O: Interpret<V>> Interpret<V>
+	for rdf_types::Triple<S, P, O>
+{
+	type Interpreted = rdf_types::Triple<S::Interpreted, P::Interpreted, O::Interpreted>;
+
+	fn interpret<'a, I: InterpretationMut<'a, V>>(
+		self,
+		vocabulary: &mut V,
+		interpretation: &mut I,
+	) -> Result<Self::Interpreted, I::Error> {
+		Ok(rdf_types::Triple(
+			self.0.interpret(vocabulary, interpretation)?,
+			self.1.interpret(vocabulary, interpretation)?,
+			self.2.interpret(vocabulary, interpretation)?,
+		))
+	}
+}
+
 impl<V: Vocabulary> Interpret<V> for uninterpreted::Term<V> {
 	type Interpreted = Id;
 

@@ -1,9 +1,12 @@
 #! RDFS Semantics inference rules.
+base <https://treeldr.org/semantics/rdfs/>
+prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 
 ## Everything is a resource.
 ## 
 ## `ICEXT(I(rdfs:Resource)) = IR`
-rdfs:Resource {
+rule Resource {
 	?x ?y ?z .
 } => {
 	?x rdf:type rdfs:Resource .
@@ -14,7 +17,7 @@ rdfs:Resource {
 ## Property domain.
 ## 
 ## If `<x,y>` is in `IEXT(I(rdfs:domain))` and `<u,v>` is in `IEXT(x)` then `u` is in `ICEXT(y)`
-rdfs:domain {
+rule Domain {
 	?x rdfs:domain ?y .
 	?u ?x ?v .
 } => {
@@ -22,17 +25,17 @@ rdfs:domain {
 }
 
 # If `<x,y>` is in `IEXT(I(rdfs:range))` and `<u,v>` is in `IEXT(x)` then `v` is in `ICEXT(y)`
-rdfs:range {
+rule Range {
 	?x rdfs:range ?y .
 	?u ?x ?v .
 } => {
 	?v rdf:type ?y !
 }
 
-rdfs:subPropertyOf {
+group SubPropertyOf {
 	# If `<x,y>` is in `IEXT(I(rdfs:subPropertyOf))` then `x` and `y` are in `IP`
 	# and `IEXT(x)` is a subset of `IEXT(y)`
-	rdfs:subPropertyOfAction {
+	rule Base {
 		?x rdfs:subPropertyOf ?y .
 		?a ?x ?b .
 	} => {
@@ -40,14 +43,14 @@ rdfs:subPropertyOf {
 	}
 
 	# `IEXT(I(rdfs:subPropertyOf))` is reflexive on `IP`
-	rdfs:subPropertyOfReflexivity {
+	rule Reflexivity {
 		?x rdf:type rdfs:Property .
 	} => {
 		?x rdfs:subPropertyOf ?x .
 	}
 
 	# `IEXT(I(rdfs:subPropertyOf))` is transitive on `IP`
-	rdfs:subPropertyOfTransitivity {
+	rule Transitivity {
 		?x rdfs:subPropertyOf ?y .
 		?x rdfs:subPropertyOf ?z .
 	} => {
@@ -55,17 +58,17 @@ rdfs:subPropertyOf {
 	}
 }
 
-# If `x` is in `IC` then `<x, I(rdfs:Resource)>` is in `IEXT(I(rdfs:subClassOf))`
-{
-	?x rdf:type rdfs:Class .
-} => {
-	?x rdfs:subClassOf rdfs:Resource .
-}
+group SubClassOf {
+	# If `x` is in `IC` then `<x, I(rdfs:Resource)>` is in `IEXT(I(rdfs:subClassOf))`
+	rule Resource {
+		?x rdf:type rdfs:Class .
+	} => {
+		?x rdfs:subClassOf rdfs:Resource .
+	}
 
-{
 	# If `<x,y>` is in `IEXT(I(rdfs:subClassOf))` then `x` and `y` are in `IC` and
 	# `ICEXT(x)` is a subset of `ICEXT(y)`
-	{
+	rule Type {
 		?x rdfs:subClassOf ?y .
 		?a rdf:type ?x .
 	} => {
@@ -73,14 +76,14 @@ rdfs:subPropertyOf {
 	}
 
 	# `IEXT(I(rdfs:subClassOf))` is transitive and reflexive on `IC`
-	{
+	rule Reflexivity {
 		?x rdf:type rdfs:Class .
 	} => {
 		?x rdfs:subClassOf ?x .
 	}
 
 	# `IEXT(I(rdfs:subClassOf))` is transitive and reflexive on `IC`
-	{
+	rule Transitivity {
 		?x rdfs:subClassOf ?y .
 		?x rdfs:subClassOf ?z .
 	} => {
@@ -90,7 +93,7 @@ rdfs:subPropertyOf {
 
 # If `x` is in `ICEXT(I(rdfs:ContainerMembershipProperty))` then
 # `<x, I(rdfs:member)>` is in `IEXT(I(rdfs:subPropertyOf))`
-{
+rule ContainerMembershipProperty {
 	?x rdf:type rdfs:ContainerMembershipProperty .
 } => {
 	?x rdfs:subPropertyOf rdfs:member .

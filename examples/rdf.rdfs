@@ -1,11 +1,13 @@
 #! RDF Semantics inference rules.
+base <https://treeldr.org/semantics/rdf/>
+prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 
 ## Property.
 ##
 ## Every resource used as property has type `rdf:Property`.
 ##
 ## `x` is in `IP` if and only if `<x, I(rdf:Property)>` is in `IEXT(I(rdf:type))`
-rdf:Property {
+rule Property {
 	?a ?x ?b .
 } => {
 	?x rdf:type rdf:Property !

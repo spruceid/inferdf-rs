@@ -1,6 +1,6 @@
 use rdf_types::Vocabulary;
 
-use crate::Id;
+use crate::{module::sub_module::ResourceGenerator, Id};
 
 use super::{reservable_slab, Interpretation, Resource};
 
@@ -27,6 +27,12 @@ impl<'a, V: Vocabulary> Reservation<'a, V> {
 		CompletedReservation {
 			inner: self.inner.end(),
 		}
+	}
+}
+
+impl<'a, V: Vocabulary> ResourceGenerator for Reservation<'a, V> {
+	fn new_resource(&mut self) -> Id {
+		self.new_resource()
 	}
 }
 

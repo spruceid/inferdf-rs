@@ -12,17 +12,17 @@ use super::{
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct BipolarMap<V>(Bipolar<Map<V>>);
+pub struct BipolarMap<V, T = Id>(Bipolar<Map<V, T>>);
 
-impl<V: Eq + Hash> BipolarMap<V> {
-	pub fn insert(&mut self, Signed(sign, pattern): Signed<Canonical>, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> BipolarMap<V, T> {
+	pub fn insert(&mut self, Signed(sign, pattern): Signed<Canonical<T>>, value: V) -> bool {
 		self.0.get_mut(sign).insert(pattern, value)
 	}
 }
 
 impl<V> BipolarMap<V> {
-	pub fn get(&self, Signed(sign, triple): Signed<Triple>) -> Values<V> {
-		self.0.get(sign).get(triple)
+	pub fn get(&self, Signed(sign, triple): &Signed<Triple>) -> Values<V> {
+		self.0.get(*sign).get(triple)
 	}
 }
 
@@ -34,13 +34,13 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for BipolarMap<V> {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct Map<V> {
-	any: AnySubjectMap<V>,
-	given: HashMap<Id, GivenSubjectMap<V>>,
+pub struct Map<V, T = Id> {
+	any: AnySubjectMap<V, T>,
+	given: HashMap<T, GivenSubjectMap<V, T>>,
 }
 
-impl<V: Eq + Hash> Map<V> {
-	pub fn insert(&mut self, pattern: Canonical, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> Map<V, T> {
+	pub fn insert(&mut self, pattern: Canonical<T>, value: V) -> bool {
 		match pattern {
 			Canonical::AnySubject(rest) => self.any.insert(rest, value),
 			Canonical::GivenSubject(id, rest) => {
@@ -50,8 +50,8 @@ impl<V: Eq + Hash> Map<V> {
 	}
 }
 
-impl<V> Map<V> {
-	pub fn get(&self, triple: Triple) -> Values<V> {
+impl<V, T: Eq + Hash> Map<V, T> {
+	pub fn get(&self, triple: &rdf_types::Triple<T, T, T>) -> Values<V> {
 		Values {
 			any: self.any.get(triple),
 			given: self.given.get(triple.subject()).map(|s| s.get(triple)),
@@ -83,13 +83,13 @@ impl<'a, V> Iterator for Values<'a, V> {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct GivenSubjectMap<V> {
-	any: GivenSubjectAnyPredicateMap<V>,
-	given: HashMap<Id, GivenSubjectGivenPredicateMap<V>>,
+pub struct GivenSubjectMap<V, T> {
+	any: GivenSubjectAnyPredicateMap<V, T>,
+	given: HashMap<T, GivenSubjectGivenPredicateMap<V, T>>,
 }
 
-impl<V: Eq + Hash> GivenSubjectMap<V> {
-	pub fn insert(&mut self, pattern: GivenSubject, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> GivenSubjectMap<V, T> {
+	pub fn insert(&mut self, pattern: GivenSubject<T>, value: V) -> bool {
 		match pattern {
 			GivenSubject::AnyPredicate(rest) => self.any.insert(rest, value),
 			GivenSubject::GivenPredicate(id, rest) => {
@@ -99,8 +99,8 @@ impl<V: Eq + Hash> GivenSubjectMap<V> {
 	}
 }
 
-impl<V> GivenSubjectMap<V> {
-	pub fn get(&self, triple: Triple) -> GivenSubjectValues<V> {
+impl<V, T: Eq + Hash> GivenSubjectMap<V, T> {
+	pub fn get(&self, triple: &rdf_types::Triple<T, T, T>) -> GivenSubjectValues<V> {
 		GivenSubjectValues {
 			any: self.any.get(triple),
 			given: self.given.get(triple.predicate()).map(|p| p.get(triple)),
@@ -108,14 +108,14 @@ impl<V> GivenSubjectMap<V> {
 	}
 }
 
-impl<V: Eq + Hash> Union for GivenSubjectMap<V> {
+impl<V: Eq + Hash> Union for GivenSubjectMap<V, Id> {
 	fn union_with(&mut self, other: Self) {
 		self.any.union_with(other.any);
 		self.given.union_with(other.given);
 	}
 }
 
-impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectMap<V> {
+impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectMap<V, Id> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		self.any.replace_id(a, b);
 		self.given.replace_id(a, b)
@@ -139,14 +139,14 @@ impl<'a, V> Iterator for GivenSubjectValues<'a, V> {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct GivenSubjectAnyPredicateMap<V> {
+pub struct GivenSubjectAnyPredicateMap<V, T> {
 	any: HashSet<V>,
 	same_as_predicate: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>,
+	given: HashMap<T, HashSet<V>>,
 }
 
-impl<V: Eq + Hash> GivenSubjectAnyPredicateMap<V> {
-	pub fn insert(&mut self, pattern: GivenSubjectAnyPredicate, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> GivenSubjectAnyPredicateMap<V, T> {
+	pub fn insert(&mut self, pattern: GivenSubjectAnyPredicate<T>, value: V) -> bool {
 		match pattern {
 			GivenSubjectAnyPredicate::AnyObject => self.any.insert(value),
 			GivenSubjectAnyPredicate::SameAsPredicate => self.same_as_predicate.insert(value),
@@ -157,8 +157,8 @@ impl<V: Eq + Hash> GivenSubjectAnyPredicateMap<V> {
 	}
 }
 
-impl<V> GivenSubjectAnyPredicateMap<V> {
-	pub fn get(&self, triple: Triple) -> GivenSubjectAnyPredicateValues<V> {
+impl<V, T: Eq + Hash> GivenSubjectAnyPredicateMap<V, T> {
+	pub fn get(&self, triple: &rdf_types::Triple<T, T, T>) -> GivenSubjectAnyPredicateValues<V> {
 		GivenSubjectAnyPredicateValues {
 			any: self.any.iter(),
 			same_as_predicate: if triple.predicate() == triple.object() {
@@ -171,7 +171,7 @@ impl<V> GivenSubjectAnyPredicateMap<V> {
 	}
 }
 
-impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectAnyPredicateMap<V> {
+impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectAnyPredicateMap<V, Id> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		self.any.replace_id(a, b);
 		self.same_as_predicate.replace_id(a, b);
@@ -179,7 +179,7 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectAnyPredicateMap<V> {
 	}
 }
 
-impl<V: Eq + Hash> Union for GivenSubjectAnyPredicateMap<V> {
+impl<V: Eq + Hash> Union for GivenSubjectAnyPredicateMap<V, Id> {
 	fn union_with(&mut self, other: Self) {
 		self.any.union_with(other.any);
 		self.same_as_predicate.union_with(other.same_as_predicate);
@@ -206,13 +206,13 @@ impl<'a, V> Iterator for GivenSubjectAnyPredicateValues<'a, V> {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct GivenSubjectGivenPredicateMap<V> {
+pub struct GivenSubjectGivenPredicateMap<V, T> {
 	any: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>,
+	given: HashMap<T, HashSet<V>>,
 }
 
-impl<V: Eq + Hash> GivenSubjectGivenPredicateMap<V> {
-	pub fn insert(&mut self, pattern: GivenSubjectGivenPredicate, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> GivenSubjectGivenPredicateMap<V, T> {
+	pub fn insert(&mut self, pattern: GivenSubjectGivenPredicate<T>, value: V) -> bool {
 		match pattern {
 			GivenSubjectGivenPredicate::AnyObject => self.any.insert(value),
 			GivenSubjectGivenPredicate::GivenObject(id) => {
@@ -222,8 +222,8 @@ impl<V: Eq + Hash> GivenSubjectGivenPredicateMap<V> {
 	}
 }
 
-impl<V> GivenSubjectGivenPredicateMap<V> {
-	pub fn get(&self, triple: Triple) -> GivenSubjectGivenPredicateValues<V> {
+impl<V, T: Eq + Hash> GivenSubjectGivenPredicateMap<V, T> {
+	pub fn get(&self, triple: &rdf_types::Triple<T, T, T>) -> GivenSubjectGivenPredicateValues<V> {
 		GivenSubjectGivenPredicateValues {
 			any: self.any.iter(),
 			given: self.given.get(triple.object()).map(|o| o.iter()),
@@ -231,14 +231,14 @@ impl<V> GivenSubjectGivenPredicateMap<V> {
 	}
 }
 
-impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectGivenPredicateMap<V> {
+impl<V: Eq + Hash + ReplaceId> ReplaceId for GivenSubjectGivenPredicateMap<V, Id> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		self.any.replace_id(a, b);
 		self.given.replace_id(a, b)
 	}
 }
 
-impl<V: Eq + Hash> Union for GivenSubjectGivenPredicateMap<V> {
+impl<V: Eq + Hash> Union for GivenSubjectGivenPredicateMap<V, Id> {
 	fn union_with(&mut self, other: Self) {
 		self.any.union_with(other.any);
 		self.given.union_with(other.given)
@@ -262,14 +262,14 @@ impl<'a, V> Iterator for GivenSubjectGivenPredicateValues<'a, V> {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct AnySubjectMap<V> {
-	any: AnySubjectAnyPredicateMap<V>,
-	same_as_subject: AnySubjectGivenPredicateMap<V>,
-	given: HashMap<Id, AnySubjectGivenPredicateMap<V>>,
+pub struct AnySubjectMap<V, T> {
+	any: AnySubjectAnyPredicateMap<V, T>,
+	same_as_subject: AnySubjectGivenPredicateMap<V, T>,
+	given: HashMap<T, AnySubjectGivenPredicateMap<V, T>>,
 }
 
-impl<V: Eq + Hash> AnySubjectMap<V> {
-	pub fn insert(&mut self, pattern: AnySubject, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> AnySubjectMap<V, T> {
+	pub fn insert(&mut self, pattern: AnySubject<T>, value: V) -> bool {
 		match pattern {
 			AnySubject::AnyPredicate(rest) => self.any.insert(rest, value),
 			AnySubject::SameAsSubject(rest) => self.same_as_subject.insert(rest, value),
@@ -280,8 +280,8 @@ impl<V: Eq + Hash> AnySubjectMap<V> {
 	}
 }
 
-impl<V> AnySubjectMap<V> {
-	pub fn get(&self, triple: Triple) -> AnySubjectValues<V> {
+impl<V, T: Eq + Hash> AnySubjectMap<V, T> {
+	pub fn get(&self, triple: &rdf_types::Triple<T, T, T>) -> AnySubjectValues<V> {
 		AnySubjectValues {
 			any: self.any.get(triple),
 			same_as_subject: if triple.subject() == triple.predicate() {
@@ -294,7 +294,7 @@ impl<V> AnySubjectMap<V> {
 	}
 }
 
-impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectMap<V> {
+impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectMap<V, Id> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		self.any.replace_id(a, b);
 		self.same_as_subject.replace_id(a, b);
@@ -302,7 +302,7 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectMap<V> {
 	}
 }
 
-impl<V: Eq + Hash> Union for AnySubjectMap<V> {
+impl<V: Eq + Hash> Union for AnySubjectMap<V, Id> {
 	fn union_with(&mut self, other: Self) {
 		self.any.union_with(other.any);
 		self.same_as_subject.union_with(other.same_as_subject);
@@ -329,15 +329,15 @@ impl<'a, V> Iterator for AnySubjectValues<'a, V> {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct AnySubjectAnyPredicateMap<V> {
+pub struct AnySubjectAnyPredicateMap<V, T> {
 	any: HashSet<V>,
 	same_as_subject: HashSet<V>,
 	same_as_predicate: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>,
+	given: HashMap<T, HashSet<V>>,
 }
 
-impl<V: Eq + Hash> AnySubjectAnyPredicateMap<V> {
-	pub fn insert(&mut self, pattern: AnySubjectAnyPredicate, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> AnySubjectAnyPredicateMap<V, T> {
+	pub fn insert(&mut self, pattern: AnySubjectAnyPredicate<T>, value: V) -> bool {
 		match pattern {
 			AnySubjectAnyPredicate::AnyObject => self.any.insert(value),
 			AnySubjectAnyPredicate::SameAsSubject => self.same_as_subject.insert(value),
@@ -349,8 +349,8 @@ impl<V: Eq + Hash> AnySubjectAnyPredicateMap<V> {
 	}
 }
 
-impl<V> AnySubjectAnyPredicateMap<V> {
-	pub fn get(&self, triple: Triple) -> AnySubjectAnyPredicateValues<V> {
+impl<V, T: Eq + Hash> AnySubjectAnyPredicateMap<V, T> {
+	pub fn get(&self, triple: &rdf_types::Triple<T, T, T>) -> AnySubjectAnyPredicateValues<V> {
 		AnySubjectAnyPredicateValues {
 			any: self.any.iter(),
 			same_as_subject: if triple.subject() == triple.object() {
@@ -368,7 +368,7 @@ impl<V> AnySubjectAnyPredicateMap<V> {
 	}
 }
 
-impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectAnyPredicateMap<V> {
+impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectAnyPredicateMap<V, Id> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		self.any.replace_id(a, b);
 		self.same_as_subject.replace_id(a, b);
@@ -377,7 +377,7 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectAnyPredicateMap<V> {
 	}
 }
 
-impl<V: Eq + Hash> Union for AnySubjectAnyPredicateMap<V> {
+impl<V: Eq + Hash> Union for AnySubjectAnyPredicateMap<V, Id> {
 	fn union_with(&mut self, other: Self) {
 		self.any.union_with(other.any);
 		self.same_as_subject.union_with(other.same_as_subject);
@@ -407,14 +407,14 @@ impl<'a, V> Iterator for AnySubjectAnyPredicateValues<'a, V> {
 
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct AnySubjectGivenPredicateMap<V> {
+pub struct AnySubjectGivenPredicateMap<V, T> {
 	any: HashSet<V>,
 	same_as_subject: HashSet<V>,
-	given: HashMap<Id, HashSet<V>>,
+	given: HashMap<T, HashSet<V>>,
 }
 
-impl<V: Eq + Hash> AnySubjectGivenPredicateMap<V> {
-	pub fn insert(&mut self, pattern: AnySubjectGivenPredicate, value: V) -> bool {
+impl<V: Eq + Hash, T: Eq + Hash> AnySubjectGivenPredicateMap<V, T> {
+	pub fn insert(&mut self, pattern: AnySubjectGivenPredicate<T>, value: V) -> bool {
 		match pattern {
 			AnySubjectGivenPredicate::AnyObject => self.any.insert(value),
 			AnySubjectGivenPredicate::SameAsSubject => self.same_as_subject.insert(value),
@@ -425,8 +425,8 @@ impl<V: Eq + Hash> AnySubjectGivenPredicateMap<V> {
 	}
 }
 
-impl<V> AnySubjectGivenPredicateMap<V> {
-	pub fn get(&self, triple: Triple) -> AnySubjectGivenPredicateValues<V> {
+impl<V, T: Eq + Hash> AnySubjectGivenPredicateMap<V, T> {
+	pub fn get(&self, triple: &rdf_types::Triple<T, T, T>) -> AnySubjectGivenPredicateValues<V> {
 		AnySubjectGivenPredicateValues {
 			any: self.any.iter(),
 			same_as_subject: if triple.subject() == triple.object() {
@@ -439,7 +439,7 @@ impl<V> AnySubjectGivenPredicateMap<V> {
 	}
 }
 
-impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectGivenPredicateMap<V> {
+impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectGivenPredicateMap<V, Id> {
 	fn replace_id(&mut self, a: Id, b: Id) {
 		self.any.replace_id(a, b);
 		self.same_as_subject.replace_id(a, b);
@@ -447,7 +447,7 @@ impl<V: Eq + Hash + ReplaceId> ReplaceId for AnySubjectGivenPredicateMap<V> {
 	}
 }
 
-impl<V: Eq + Hash> Union for AnySubjectGivenPredicateMap<V> {
+impl<V: Eq + Hash> Union for AnySubjectGivenPredicateMap<V, Id> {
 	fn union_with(&mut self, other: Self) {
 		self.any.union_with(other.any);
 		self.same_as_subject.union_with(other.same_as_subject);

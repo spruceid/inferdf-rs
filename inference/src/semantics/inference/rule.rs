@@ -1,231 +1,319 @@
-use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
+use inferdf_core::{Id, Pattern, Signed};
 use serde::{Deserialize, Serialize};
 
-use inferdf_core::{
-	interpretation::{Interpret, InterpretationMut},
-	pattern::{IdOrVar, Instantiate, PatternSubstitution},
-	uninterpreted, Id, Pattern, Signed, Triple,
-};
+mod conclusion;
+mod hypothesis;
 
-use crate::{builder::QuadStatement, semantics::MaybeTrusted};
+pub use conclusion::*;
+pub use hypothesis::*;
 
 /// Inference rule.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Rule<T = Id> {
 	pub id: T,
+	pub formula: Formula<T>,
+}
+
+impl<T> Rule<T> {
+	pub fn is_existential(&self) -> bool {
+		self.formula.is_fully_existential()
+	}
+
+	pub fn as_existential_implication(&self) -> Option<ExistentialImplication<T>> {
+		self.formula
+			.existential_implication_conclusion()
+			.map(|conclusion| ExistentialImplication {
+				formula: &self.formula,
+				conclusion,
+			})
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Variable {
+	pub index: usize,
+	pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ForAll<T> {
+	pub variables: Vec<Variable>,
+	pub constraints: Hypothesis<T>,
+	pub inner: Box<Formula<T>>,
+}
+
+// forall x. exists y. x prop 1 & x prop y.
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Exists<T> {
+	pub variables: Vec<Variable>,
 	pub hypothesis: Hypothesis<T>,
-	pub conclusion: Conclusion<T>,
+	pub inner: Box<Formula<T>>,
 }
 
-impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Rule<T> {
-	type Inserted = Rule<T::Inserted>;
-
-	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
-		Rule {
-			id: self.id.insert_into_vocabulary(vocabulary),
-			hypothesis: self.hypothesis.insert_into_vocabulary(vocabulary),
-			conclusion: self.conclusion.insert_into_vocabulary(vocabulary),
+impl<T> Exists<T> {
+	fn hypothesis_pattern_from(&self, i: usize) -> Option<&Signed<Pattern<T>>> {
+		if i < self.hypothesis.patterns.len() {
+			self.hypothesis.patterns.get(i)
+		} else {
+			self.inner
+				.hypothesis_pattern_from(i - self.hypothesis.patterns.len())
 		}
-	}
-}
-
-impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Rule<T> {
-	type Output = Rule<T::Output>;
-
-	fn map_literal(self, mut f: impl FnMut(L) -> M) -> Self::Output {
-		Rule {
-			id: self.id.map_literal(&mut f),
-			hypothesis: self.hypothesis.map_literal(&mut f),
-			conclusion: self.conclusion.map_literal(f),
-		}
-	}
-}
-
-impl<V: Vocabulary> Interpret<V> for Rule<uninterpreted::Term<V>> {
-	type Interpreted = Rule;
-
-	fn interpret<'a, I: InterpretationMut<'a, V>>(
-		self,
-		vocabulary: &mut V,
-		interpretation: &mut I,
-	) -> Result<Self::Interpreted, I::Error> {
-		Ok(Rule {
-			id: self.id.interpret(vocabulary, interpretation)?,
-			hypothesis: self.hypothesis.interpret(vocabulary, interpretation)?,
-			conclusion: self.conclusion.interpret(vocabulary, interpretation)?,
-		})
-	}
-}
-
-/// Rule hypohtesis.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Hypothesis<T = Id> {
-	pub patterns: Vec<Signed<Pattern<T>>>,
-}
-
-impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Hypothesis<T> {
-	type Inserted = Hypothesis<T::Inserted>;
-
-	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
-		Hypothesis {
-			patterns: self.patterns.insert_into_vocabulary(vocabulary),
-		}
-	}
-}
-
-impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Hypothesis<T> {
-	type Output = Hypothesis<T::Output>;
-
-	fn map_literal(self, f: impl FnMut(L) -> M) -> Self::Output {
-		Hypothesis {
-			patterns: self.patterns.map_literal(f),
-		}
-	}
-}
-
-impl<V: Vocabulary> Interpret<V> for Hypothesis<uninterpreted::Term<V>> {
-	type Interpreted = Hypothesis;
-
-	fn interpret<'a, I: InterpretationMut<'a, V>>(
-		self,
-		vocabulary: &mut V,
-		interpretation: &mut I,
-	) -> Result<Self::Interpreted, I::Error> {
-		Ok(Hypothesis {
-			patterns: self.patterns.interpret(vocabulary, interpretation)?,
-		})
-	}
-}
-
-/// Rule conclusion.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Conclusion<T = Id> {
-	pub statements: Vec<MaybeTrusted<Signed<StatementPattern<T>>>>,
-}
-
-impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Conclusion<T> {
-	type Inserted = Conclusion<T::Inserted>;
-
-	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
-		Conclusion {
-			statements: self.statements.insert_into_vocabulary(vocabulary),
-		}
-	}
-}
-
-impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Conclusion<T> {
-	type Output = Conclusion<T::Output>;
-
-	fn map_literal(self, f: impl FnMut(L) -> M) -> Self::Output {
-		Conclusion {
-			statements: self.statements.map_literal(f),
-		}
-	}
-}
-
-impl<V: Vocabulary> Interpret<V> for Conclusion<uninterpreted::Term<V>> {
-	type Interpreted = Conclusion;
-
-	fn interpret<'a, I: InterpretationMut<'a, V>>(
-		self,
-		vocabulary: &mut V,
-		interpretation: &mut I,
-	) -> Result<Self::Interpreted, I::Error> {
-		Ok(Conclusion {
-			statements: self.statements.interpret(vocabulary, interpretation)?,
-		})
 	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum StatementPattern<T = Id> {
-	Triple(Pattern<T>),
-	Eq(IdOrVar<T>, IdOrVar<T>),
+pub enum Formula<T = Id> {
+	ForAll(ForAll<T>),
+	Exists(Exists<T>),
+	Conclusion(Conclusion<T>),
 }
 
-impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for StatementPattern<T> {
-	type Inserted = StatementPattern<T::Inserted>;
-
-	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+impl<T> Formula<T> {
+	pub fn is_fully_existential(&self) -> bool {
 		match self {
-			Self::Triple(pattern) => {
-				StatementPattern::Triple(pattern.insert_into_vocabulary(vocabulary))
+			Self::ForAll(_) => false,
+			Self::Exists(e) => e.inner.is_fully_existential(),
+			Self::Conclusion(_) => true,
+		}
+	}
+
+	pub fn is_universal(&self) -> bool {
+		matches!(self, Self::ForAll(_))
+	}
+
+	pub fn is_existential(&self) -> bool {
+		matches!(self, Self::Exists(_))
+	}
+
+	pub fn as_existential_mut(&mut self) -> Option<&mut Exists<T>> {
+		match self {
+			Self::Exists(e) => Some(e),
+			_ => None,
+		}
+	}
+
+	pub fn is_conclusion(&self) -> bool {
+		matches!(self, Self::Conclusion(_))
+	}
+
+	pub fn conclusion_mut(&mut self) -> &mut Conclusion<T> {
+		match self {
+			Self::ForAll(a) => a.inner.conclusion_mut(),
+			Self::Exists(e) => e.inner.conclusion_mut(),
+			Self::Conclusion(c) => c,
+		}
+	}
+
+	pub fn visit_variables(&self, mut f: impl FnMut(&Self, usize)) {
+		match self {
+			Self::ForAll(a) => {
+				a.constraints.visit_variables(|x| f(self, x));
+				a.inner.visit_variables(f)
 			}
-			Self::Eq(a, b) => StatementPattern::Eq(
-				a.insert_into_vocabulary(vocabulary),
-				b.insert_into_vocabulary(vocabulary),
-			),
-		}
-	}
-}
-
-impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for StatementPattern<T> {
-	type Output = StatementPattern<T::Output>;
-
-	fn map_literal(self, mut f: impl FnMut(L) -> M) -> Self::Output {
-		match self {
-			Self::Triple(pattern) => StatementPattern::Triple(pattern.map_literal(f)),
-			Self::Eq(a, b) => StatementPattern::Eq(a.map_literal(&mut f), b.map_literal(f)),
-		}
-	}
-}
-
-impl<V: Vocabulary> Interpret<V> for StatementPattern<uninterpreted::Term<V>> {
-	type Interpreted = StatementPattern;
-
-	fn interpret<'a, I: InterpretationMut<'a, V>>(
-		self,
-		vocabulary: &mut V,
-		interpretation: &mut I,
-	) -> Result<Self::Interpreted, I::Error> {
-		match self {
-			Self::Triple(pattern) => Ok(StatementPattern::Triple(
-				pattern.interpret(vocabulary, interpretation)?,
-			)),
-			Self::Eq(a, b) => Ok(StatementPattern::Eq(
-				a.interpret(vocabulary, interpretation)?,
-				b.interpret(vocabulary, interpretation)?,
-			)),
-		}
-	}
-}
-
-impl Instantiate for StatementPattern {
-	type Output = TripleStatement;
-
-	fn instantiate(
-		&self,
-		substitution: &mut PatternSubstitution,
-		mut new_id: impl FnMut() -> Id,
-	) -> Self::Output {
-		match self {
-			Self::Triple(pattern) => {
-				TripleStatement::Triple(pattern.instantiate(substitution, new_id))
+			Self::Exists(e) => {
+				e.hypothesis.visit_variables(|x| f(self, x));
+				e.inner.visit_variables(f)
 			}
-			Self::Eq(a, b) => TripleStatement::Eq(
-				a.instantiate(substitution, &mut new_id),
-				b.instantiate(substitution, &mut new_id),
-			),
+			Self::Conclusion(c) => c.visit_variables(|x| f(self, x)),
 		}
 	}
-}
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TripleStatement {
-	Triple(Triple),
-	Eq(Id, Id),
-}
-
-impl TripleStatement {
-	pub fn with_graph(self, g: Option<Id>) -> QuadStatement {
+	pub fn visit_declared_variables(&self, mut f: impl FnMut(usize)) {
 		match self {
-			Self::Triple(t) => QuadStatement::Quad(t.into_quad(g)),
-			Self::Eq(a, b) => QuadStatement::Eq(a, b, g),
+			Self::ForAll(a) => {
+				for x in &a.variables {
+					f(x.index)
+				}
+
+				a.inner.visit_declared_variables(f)
+			}
+			Self::Exists(e) => {
+				for x in &e.variables {
+					f(x.index)
+				}
+
+				e.inner.visit_declared_variables(f)
+			}
+			Self::Conclusion(_) => (),
+		}
+	}
+
+	pub fn normalize(&mut self) {
+		self.normalize_with(Some)
+	}
+
+	pub fn normalize_with(
+		&mut self,
+		mut f: impl FnMut(Signed<Pattern<T>>) -> Option<Signed<Pattern<T>>>,
+	) {
+		match self {
+			Self::ForAll(a) => {
+				a.inner
+					.normalize_with(normalize_to_hypothesis(&mut a.constraints));
+				a.constraints.patterns =
+					std::mem::take(&mut a.constraints.patterns)
+						.into_iter()
+						.filter_map(|p| {
+							if p.1 .0.is_id_or(|x| {
+								a.variables.binary_search_by_key(&x, |y| y.index).is_ok()
+							}) || p.1 .1.is_id_or(|x| {
+								a.variables.binary_search_by_key(&x, |y| y.index).is_ok()
+							}) || p.1 .2.is_id_or(|x| {
+								a.variables.binary_search_by_key(&x, |y| y.index).is_ok()
+							}) {
+								Some(p)
+							} else {
+								f(p)
+							}
+						})
+						.collect();
+			}
+			Self::Exists(e) => {
+				e.inner
+					.normalize_with(normalize_to_hypothesis(&mut e.hypothesis));
+				e.hypothesis.patterns =
+					std::mem::take(&mut e.hypothesis.patterns)
+						.into_iter()
+						.filter_map(|p| {
+							if p.1 .0.is_id_or(|x| {
+								e.variables.binary_search_by_key(&x, |y| y.index).is_ok()
+							}) || p.1 .1.is_id_or(|x| {
+								e.variables.binary_search_by_key(&x, |y| y.index).is_ok()
+							}) || p.1 .2.is_id_or(|x| {
+								e.variables.binary_search_by_key(&x, |y| y.index).is_ok()
+							}) {
+								Some(p)
+							} else {
+								f(p)
+							}
+						})
+						.collect();
+			}
+			Self::Conclusion(_) => (),
+		}
+	}
+
+	fn existential_implication_conclusion(&self) -> Option<&Conclusion<T>> {
+		match self {
+			Self::ForAll(_) => None,
+			Self::Exists(e) => e.inner.existential_implication_conclusion(),
+			Self::Conclusion(c) => Some(c),
+		}
+	}
+
+	fn hypothesis_pattern_from(&self, i: usize) -> Option<&Signed<Pattern<T>>> {
+		match self {
+			Self::ForAll(_) => None,
+			Self::Exists(e) => e.hypothesis_pattern_from(i),
+			Self::Conclusion(_) => None,
 		}
 	}
 }
+
+fn normalize_to_hypothesis<T>(
+	h: &mut Hypothesis<T>,
+) -> impl '_ + FnMut(Signed<Pattern<T>>) -> Option<Signed<Pattern<T>>> {
+	|p| {
+		h.patterns.push(p);
+		None
+	}
+}
+
+pub struct ExistentialImplication<'a, T> {
+	formula: &'a Formula<T>,
+	conclusion: &'a Conclusion<T>,
+}
+
+impl<'a, T> ExistentialImplication<'a, T> {
+	pub fn hypothesis_patterns(&self) -> ExistentialImplicationHypothesisPatterns<'a, T> {
+		ExistentialImplicationHypothesisPatterns {
+			formula: self.formula,
+			current: None,
+		}
+	}
+
+	pub fn hypothesis_pattern(&self, i: usize) -> Option<&'a Signed<Pattern<T>>> {
+		self.formula.hypothesis_pattern_from(i)
+	}
+
+	pub fn conclusion(&self) -> &'a Conclusion<T> {
+		self.conclusion
+	}
+}
+
+pub struct ExistentialImplicationHypothesisPatterns<'a, T> {
+	formula: &'a Formula<T>,
+	current: Option<std::slice::Iter<'a, Signed<Pattern<T>>>>,
+}
+
+impl<'a, T> Iterator for ExistentialImplicationHypothesisPatterns<'a, T> {
+	type Item = &'a Signed<Pattern<T>>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			match &mut self.current {
+				Some(current) => match current.next() {
+					Some(p) => break Some(p),
+					None => self.current = None,
+				},
+				None => match self.formula {
+					Formula::Exists(e) => {
+						self.formula = &*e.inner;
+						self.current = Some(e.hypothesis.patterns.iter())
+					}
+					_ => break None,
+				},
+			}
+		}
+	}
+}
+
+impl<T> Rule<T> {
+	pub fn new(id: T, formula: Formula<T>) -> Self {
+		Self { id, formula }
+	}
+}
+
+// impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Rule<T> {
+// 	type Inserted = Rule<T::Inserted>;
+
+// 	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
+// 		Rule {
+// 			id: self.id.insert_into_vocabulary(vocabulary),
+// 			hypothesis: self.hypothesis.insert_into_vocabulary(vocabulary),
+// 			conclusion: self.conclusion.insert_into_vocabulary(vocabulary),
+// 		}
+// 	}
+// }
+
+// impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Rule<T> {
+// 	type Output = Rule<T::Output>;
+
+// 	fn map_literal(self, mut f: impl FnMut(L) -> M) -> Self::Output {
+// 		Rule {
+// 			id: self.id.map_literal(&mut f),
+// 			hypothesis: self.hypothesis.map_literal(&mut f),
+// 			conclusion: self.conclusion.map_literal(f),
+// 		}
+// 	}
+// }
+
+// impl<V: Vocabulary> Interpret<V> for Rule<uninterpreted::Term<V>> {
+// 	type Interpreted = Rule;
+
+// 	fn interpret<'a, I: InterpretationMut<'a, V>>(
+// 		self,
+// 		vocabulary: &mut V,
+// 		interpretation: &mut I,
+// 	) -> Result<Self::Interpreted, I::Error> {
+// 		Ok(Rule {
+// 			id: self.id.interpret(vocabulary, interpretation)?,
+// 			hypothesis: self.hypothesis.interpret(vocabulary, interpretation)?,
+// 			conclusion: self.conclusion.interpret(vocabulary, interpretation)?,
+// 		})
+// 	}
+// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Path {

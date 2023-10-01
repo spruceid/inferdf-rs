@@ -238,17 +238,17 @@ impl Graph {
 	}
 
 	pub fn full_matching(&self, pattern: pattern::Canonical, sign: Option<Sign>) -> Matching {
-		let s = pattern.subject().id();
-		let p = pattern.predicate().id();
-		let o = pattern.object().id();
+		let s = pattern.subject().into_id();
+		let p = pattern.predicate().into_id();
+		let o = pattern.object().into_id();
 
 		let inner = if s.is_none() && p.is_none() && o.is_none() {
 			InnerMatching::All(self.facts.iter())
 		} else {
-			get_opt(&self.resources, s.as_ref())
+			get_opt(&self.resources, s)
 				.and_then(|s| {
-					get_opt(&self.resources, p.as_ref()).and_then(|p| {
-						get_opt(&self.resources, o.as_ref()).map(|o| InnerMatching::Constrained {
+					get_opt(&self.resources, p).and_then(|p| {
+						get_opt(&self.resources, o).map(|o| InnerMatching::Constrained {
 							facts: &self.facts,
 							subject: s.map(|r| r.as_subject.iter()),
 							predicate: p.map(|r| r.as_predicate.iter()),
@@ -262,8 +262,8 @@ impl Graph {
 		Matching {
 			inner,
 			constraints: MatchingConstraints {
-				predicate: pattern.predicate(),
-				object: pattern.object(),
+				predicate: pattern.predicate().cloned(),
+				object: pattern.object().cloned(),
 				sign,
 			},
 		}

@@ -1,5 +1,6 @@
 use inferdf_core::{
 	interpretation::{Interpret, InterpretationMut},
+	module::sub_module::ResourceGenerator,
 	pattern::{self, Instantiate, PatternSubstitution},
 	Cause, Entailment, Fact, Id, IteratorWith, Signed, Triple,
 };
@@ -11,19 +12,48 @@ use locspan::Meta;
 use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
-pub trait Context<V> {
-	type Error;
-	type PatternMatching<'a>: 'a + IteratorWith<V, Item = Result<(Fact, bool), Self::Error>>
-	where
-		Self: 'a;
+pub trait ContextReservation: ResourceGenerator {
+	type CompletedReservation;
 
-	fn pattern_matching(&self, pattern: Signed<pattern::Canonical>) -> Self::PatternMatching<'_>;
-
-	fn new_resource(&self) -> Id;
+	fn end(self) -> Self::CompletedReservation;
 }
 
-pub trait Semantics {
-	fn deduce<V, C: Context<V>>(
+pub trait Context<V: Vocabulary> {
+	type Error;
+	type PatternMatching<'a, G: ResourceGenerator>: 'a
+		+ IteratorWith<V, Item = Result<(Fact, bool), Self::Error>>
+	where
+		Self: 'a,
+		G: 'a;
+
+	type Reservation<'r>: ContextReservation<CompletedReservation = Self::CompletedReservation>
+	where
+		Self: 'r;
+	type CompletedReservation;
+
+	fn begin_reservation(&self) -> Self::Reservation<'_>;
+
+	fn apply_reservation(&mut self, generator: Self::CompletedReservation);
+
+	fn pattern_matching<'a, G: 'a + ResourceGenerator>(
+		&'a self,
+		generator: G,
+		pattern: Signed<pattern::Canonical>,
+	) -> Self::PatternMatching<'a, G>;
+
+	fn new_resource(&mut self) -> Id;
+
+	fn insert_iri(&mut self, vocabulary: &mut V, iri: V::Iri) -> Result<Id, Self::Error>;
+
+	fn literal_interpretation(
+		&self,
+		vocabulary: &mut V,
+		id: Id,
+	) -> Result<Option<V::Literal>, Self::Error>;
+}
+
+pub trait Semantics<V: Vocabulary> {
+	fn deduce<C: Context<V>>(
 		&self,
 		vocabulary: &mut V,
 		context: &mut C,
@@ -31,12 +61,30 @@ pub trait Semantics {
 		entailment_index: impl FnMut(Entailment) -> u32,
 		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
 	) -> Result<(), C::Error>;
+
+	fn close<C: Context<V>>(
+		&self,
+		vocabulary: &mut V,
+		context: &mut C,
+		entailment_index: impl FnMut(Entailment) -> u32,
+		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
+	) -> Result<(), C::Error>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Trust {
 	Trusted,
 	Untrusted,
+}
+
+impl Trust {
+	pub fn is_trusted(&self) -> bool {
+		matches!(self, Self::Trusted)
+	}
+
+	pub fn is_untrusted(&self) -> bool {
+		matches!(self, Self::Untrusted)
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -46,6 +94,34 @@ pub enum MaybeTrusted<T> {
 }
 
 impl<T> MaybeTrusted<T> {
+	pub fn new(value: T, trust: Trust) -> Self {
+		match trust {
+			Trust::Trusted => Self::Trusted(value),
+			Trust::Untrusted => Self::Untrusted(value),
+		}
+	}
+
+	pub fn value(&self) -> &T {
+		match self {
+			Self::Trusted(t) => t,
+			Self::Untrusted(t) => t,
+		}
+	}
+
+	pub fn as_parts(&self) -> (&T, Trust) {
+		match self {
+			Self::Trusted(t) => (t, Trust::Trusted),
+			Self::Untrusted(t) => (t, Trust::Untrusted),
+		}
+	}
+
+	pub fn into_parts(self) -> (T, Trust) {
+		match self {
+			Self::Trusted(t) => (t, Trust::Trusted),
+			Self::Untrusted(t) => (t, Trust::Untrusted),
+		}
+	}
+
 	pub fn map<U>(self, f: impl FnOnce(T) -> U) -> MaybeTrusted<U> {
 		match self {
 			Self::Trusted(t) => MaybeTrusted::Trusted(f(t)),

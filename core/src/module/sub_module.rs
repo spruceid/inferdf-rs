@@ -162,6 +162,12 @@ pub trait ResourceGenerator {
 	fn new_resource(&mut self) -> Id;
 }
 
+impl<'a, G: ResourceGenerator> ResourceGenerator for &'a mut G {
+	fn new_resource(&mut self) -> Id {
+		G::new_resource(self)
+	}
+}
+
 pub struct PatternMatching<'a, V: 'a + Vocabulary, M: 'a + Module<V>, G> {
 	interface: &'a Interface,
 	inner: Option<dataset::Matching<'a, V, M::Dataset<'a>>>,

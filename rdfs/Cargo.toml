@@ -1,0 +1,28 @@
+[package]
+name = "inferdf-rdfs"
+version = "0.1.0"
+authors = ["Timothée Haudebourg <author@haudebourg.net>"]
+edition = "2021"
+
+[features]
+default = ["bin"]
+bin = ["clap", "stderrlog", "codespan-reporting"]
+
+[dependencies]
+rdf-types.workspace = true
+inferdf-core.workspace = true
+inferdf-inference.workspace = true
+iref.workspace = true
+locspan.workspace = true
+decoded-char = "0.1.1"
+log.workspace = true
+thiserror.workspace = true
+
+clap = { workspace = true, optional = true }
+stderrlog = { workspace = true, optional = true }
+codespan-reporting = { workspace = true, optional = true }
+
+[[bin]]
+name = "rdfs"
+path = "src/bin/rdfs/main.rs"
+required-features = ["bin"]

@@ -1,21 +1,28 @@
 use clap::Parser;
+use codespan_reporting::{
+	diagnostic::{Diagnostic, Label},
+	files::SimpleFiles,
+	term::{
+		self,
+		termcolor::{ColorChoice, StandardStream},
+	},
+};
 use contextual::WithContext;
-use inferdf_core::{interpretation::Interpret, module, Cause, Sign, Signed};
+use inferdf_core::{class::classification, module, Cause, Sign, Signed};
 use inferdf_inference::{
 	builder::{BuilderInterpretation, MissingStatement},
-	semantics::{
-		self,
-		inference::{rule::TripleStatement, Rule},
-	},
+	semantics::inference::{rule::TripleStatement, System},
+	Builder,
 };
 use locspan::Meta;
 use nquads_syntax::Parse;
 use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral, RdfDisplay};
 use std::{
 	fs,
-	io::{BufReader, BufWriter},
+	io::{self, BufReader, BufWriter, Write},
 	path::PathBuf,
 	process::ExitCode,
+	str::FromStr,
 };
 use yansi::Paint;
 
@@ -38,13 +45,54 @@ struct Args {
 	verbosity: u8,
 
 	/// Output module file path.
-	#[arg(short, long, default_value = "out.brdf")]
-	output: PathBuf,
+	#[arg(short, long)]
+	output: Option<PathBuf>,
+
+	#[arg(short, long, default_value = "nquads")]
+	format: Format,
 
 	/// Output module page size.
 	#[arg(long, default_value = "4096")]
 	page_size: u32,
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("unknown format `{0}`")]
+struct UnknownFormat(String);
+
+#[derive(Debug, Clone, Copy)]
+enum Format {
+	NQuads,
+	BinaryRdf,
+}
+
+impl FromStr for Format {
+	type Err = UnknownFormat;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"nquads" => Ok(Self::NQuads),
+			"brdf" => Ok(Self::BinaryRdf),
+			other => Err(UnknownFormat(other.to_owned())),
+		}
+	}
+}
+
+struct FormatOptions {
+	page_size: u32,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum Error<InputError, InterpretationError> {
+	#[error(transparent)]
+	Parsing(inferdf_rdfs::parsing::Error<InputError>),
+
+	#[error(transparent)]
+	Build(inferdf_rdfs::building::Error<InterpretationError>),
+}
+
+type ExternFile = BufReader<fs::File>;
+type ExternModule = inferdf_storage::Module<IndexVocabulary, ExternFile>;
 
 fn main() -> ExitCode {
 	let args = Args::parse();
@@ -56,8 +104,7 @@ fn main() -> ExitCode {
 
 	let mut vocabulary: IndexVocabulary = Default::default();
 
-	let mut dependencies: Vec<inferdf_storage::Module<IndexVocabulary, BufReader<fs::File>>> =
-		Vec::with_capacity(args.dependencies.len());
+	let mut dependencies: Vec<ExternModule> = Vec::with_capacity(args.dependencies.len());
 	for path in args.dependencies {
 		let input = std::fs::File::open(path).expect("unable to read file");
 		let buffered_input = BufReader::new(input);
@@ -68,18 +115,35 @@ fn main() -> ExitCode {
 
 	let mut interpretation = BuilderInterpretation::new(module::Composition::new(dependencies));
 
-	let mut system = semantics::inference::System::new();
+	let mut system = System::new();
+	let mut files = SimpleFiles::new();
 	for filename in args.semantics {
-		let content = std::fs::read_to_string(filename).expect("unable to read file");
-		let rules: Vec<Rule<rdf_types::Term>> = ron::from_str(&content).unwrap();
-		let rules = rules
-			.map_literal(|l| l.insert_type_into_vocabulary(&mut vocabulary))
-			.insert_into_vocabulary(&mut vocabulary)
-			.interpret(&mut vocabulary, &mut interpretation)
-			.unwrap();
+		use inferdf_rdfs::{Build, Parse};
+		let content = std::fs::read_to_string(&filename).expect("unable to read file");
+		let file_id = files.add(filename.to_string_lossy().into_owned(), content);
+		let input = files.get(file_id).unwrap().source().as_str();
 
-		for rule in rules {
-			system.insert(rule);
+		let result = inferdf_rdfs::Document::parse_str(input, |span| span)
+			.map_err(|Meta(e, span)| Meta(Error::Parsing(e), span))
+			.and_then(|document| {
+				let mut context = inferdf_rdfs::building::Context::new();
+				document
+					.build(&mut vocabulary, &mut interpretation, &mut context)
+					.map_err(|Meta(e, span)| Meta(Error::Build(e), span))
+			});
+
+		match result {
+			Ok(sub_system) => system.append(sub_system),
+			Err(Meta(e, span)) => {
+				let diagnostic = Diagnostic::error()
+					.with_message(e.to_string())
+					.with_labels(vec![Label::primary(file_id, span.range())]);
+
+				let writer = StandardStream::stderr(ColorChoice::Auto);
+				let config = codespan_reporting::term::Config::default();
+				term::emit(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
+				return ExitCode::FAILURE;
+			}
 		}
 	}
 
@@ -113,17 +177,6 @@ fn main() -> ExitCode {
 				panic!("unable to parse input files")
 			}
 		}
-	}
-
-	let interpretation = builder.local_interpretation();
-	for q in builder.local_dataset().iter().into_quads() {
-		let s = interpretation.terms_of(*q.subject()).next().unwrap();
-		let p = interpretation.terms_of(*q.predicate()).next().unwrap();
-		let o = interpretation.terms_of(*q.object()).next().unwrap();
-		let g = q
-			.graph()
-			.map(|g| interpretation.terms_of(*g).next().unwrap());
-		println!("{} .", rdf_types::Quad(s, p, o, g).with(&vocabulary))
 	}
 
 	if let Err(MissingStatement(Signed(_sign, statement), e)) = builder.check(&mut vocabulary) {
@@ -162,23 +215,112 @@ fn main() -> ExitCode {
 		.classify_anonymous_nodes()
 		.expect("unable to classify nodes");
 
-	let module = module::LocalRef::new(
-		builder.local_interpretation(),
-		builder.local_dataset(),
-		&classification,
-	);
+	// TODO apply classification.
 
-	let mut output = BufWriter::new(fs::File::create(args.output).expect("unable to open file"));
+	let format_options = FormatOptions {
+		page_size: args.page_size,
+	};
+	let output = match args.output {
+		Some(path) => Output::File(BufWriter::new(
+			fs::File::create(path).expect("unable to open file"),
+		)),
+		None => Output::StdOut(BufWriter::new(io::stdout().lock())),
+	};
 
-	inferdf_storage::build(
+	match produce_output(
 		&mut vocabulary,
-		&module,
-		&mut output,
-		inferdf_storage::build::Options {
-			page_size: args.page_size,
-		},
-	)
-	.expect("unable to write BRDF module");
+		builder,
+		classification,
+		args.format,
+		format_options,
+		output,
+	) {
+		Ok(()) => ExitCode::SUCCESS,
+		Err(e) => {
+			log::error!("unable to produce output: {e}");
+			ExitCode::FAILURE
+		}
+	}
+}
 
-	ExitCode::SUCCESS
+pub enum Output {
+	File(BufWriter<fs::File>),
+	StdOut(BufWriter<io::StdoutLock<'static>>),
+}
+
+impl Write for Output {
+	fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+		match self {
+			Self::File(f) => f.write(buf),
+			Self::StdOut(s) => s.write(buf),
+		}
+	}
+
+	fn flush(&mut self) -> io::Result<()> {
+		match self {
+			Self::File(f) => f.flush(),
+			Self::StdOut(s) => s.flush(),
+		}
+	}
+}
+
+#[derive(Debug, thiserror::Error)]
+enum OutputError {
+	#[error(transparent)]
+	IO(#[from] io::Error),
+
+	#[error("invalid output")]
+	InvalidOutput,
+}
+
+fn produce_output(
+	vocabulary: &mut IndexVocabulary,
+	builder: Builder<IndexVocabulary, module::Composition<IndexVocabulary, ExternModule>, System>,
+	classification: classification::Local,
+	format: Format,
+	format_options: FormatOptions,
+	mut output: Output,
+) -> Result<(), OutputError> {
+	match format {
+		Format::NQuads => {
+			let interpretation = builder.local_interpretation();
+			for q in builder.local_dataset().iter().into_quads() {
+				let s = interpretation.terms_of(*q.subject()).next().unwrap();
+				let p = interpretation.terms_of(*q.predicate()).next().unwrap();
+				let o = interpretation.terms_of(*q.object()).next().unwrap();
+				let g = q
+					.graph()
+					.map(|g| interpretation.terms_of(*g).next().unwrap());
+				writeln!(
+					output,
+					"{} .",
+					rdf_types::Quad(s, p, o, g).with(&*vocabulary)
+				)?
+			}
+
+			Ok(())
+		}
+		Format::BinaryRdf => match output {
+			Output::File(mut output) => {
+				let module = module::LocalRef::new(
+					builder.local_interpretation(),
+					builder.local_dataset(),
+					&classification,
+				);
+
+				inferdf_storage::build(
+					vocabulary,
+					&module,
+					&mut output,
+					inferdf_storage::build::Options {
+						page_size: format_options.page_size,
+					},
+				)
+				.expect("unable to write BRDF module");
+
+				Ok(())
+			}
+			Output::StdOut(_) => Err(OutputError::InvalidOutput),
+		},
+	}
 }

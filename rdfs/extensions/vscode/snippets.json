@@ -1,0 +1,40 @@
+{
+	"Base": {
+		"scope": "rdfs",
+		"prefix": "base",
+		"body": [
+			"base ${1:URL}"
+		],
+		"description": "Base URL definition."
+	},
+	"Prefix": {
+		"scope": "rdfs",
+		"prefix": "prefix",
+		"body": [
+			"prefix ${1:name}: ${2:URL}"
+		],
+		"description": "Base URL definition."
+	},
+	"Group": {
+		"scope": "rdfs",
+		"prefix": "group",
+		"body": [
+			"type ${1:URL} {",
+			"\t$0",
+			"}"
+		],
+		"description": "Rule group."
+	},
+	"Rule": {
+		"scope": "rdfs",
+		"prefix": "rule",
+		"body": [
+			"rule ${1:URL} {",
+			"\t$0",
+			"} => {",
+			"\t$1",
+			"}"
+		],
+		"description": "Rule definition."
+	}
+}

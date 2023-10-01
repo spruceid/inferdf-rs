@@ -1,7 +1,12 @@
 #! OWL semantics inference rules.
+base <https://treeldr.org/semantics/owl/>
+prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+prefix owl: <www.w3.org/2002/07/owl#>
+prefix proto-owl: <https://treeldr.org/semantics/owl/proto#>
 
 ## Functional property.
-owl:FunctionalProperty {
+rule FunctionalProperty {
 	?c rdf:type owl:FunctionalProperty .
 	?x ?c ?y1 .
 	?x ?c ?y2 .
@@ -10,7 +15,7 @@ owl:FunctionalProperty {
 }
 
 ## Inverse functional property.
-owl:InverseFunctionalProperty {
+rule InverseFunctionalProperty {
 	?c rdf:type owl:InverseFunctionalProperty .
 	?x1 ?c ?y .
 	?x2 ?c ?y .
@@ -19,14 +24,14 @@ owl:InverseFunctionalProperty {
 }
 
 ## Symmetric property.
-owl:SymmetricProperty {
+rule SymmetricProperty {
 	?c rdf:type owl:SymmetricProperty .
 	?x ?c ?y .
 } => {
 	?y ?c ?x .
 }
 
-owl:TransitiveProperty {
+rule TransitiveProperty {
 	?c rdf:type owl:TransitiveProperty .
 	?x ?c ?y .
 	?y ?c ?z .
@@ -34,65 +39,65 @@ owl:TransitiveProperty {
 	?x ?c ?z .
 }
 
-owl:equivalentClass {
+rule EquivalentClass {
 	?x owl:equivalentClass ?y .
 	?a rdf:type ?x .
 } => {
 	?a rdf:type ?y .
 }
 
-owl:disjointWith {
+rule DisjointWith {
 	?x owl:disjointWith ?y .
 	?a rdf:type ?x .
 } => {
-	?a !rdf:type ?y .
+	! ?a rdf:type ?y .
 }
 
-owl:equivalentProperty {
+rule EquivalentProperty {
 	?x owl:equivalentProperty ?y .
 	?u ?x ?v .
 } => {
 	?u ?y ?v .
 }
 
-owl:inverseOf {
+rule InverseOf {
 	?x owl:inverseOf ?y .
 	?u ?x ?v .
 } => {
 	?v ?y ?u .
 }
 
-owl:sameAs {
+rule SameAs {
 	?x owl:sameAs ?y .
 } => {
 	?x = ?y .
 }
 
-owl:differentFrom {
+rule DifferentFrom {
 	?x owl:differentFrom ?y .
 } => {
-	?x != ?y .
+	! ?x = ?y .
 }
 
 ## Complement.
-owl:complementOf {
-	#owl:omplementOf1 {
+group ComplementOf {
+	rule 1 {
 		?x owl:complementOf ?y .
 		?v rdf:type ?x .
 	} => {
-		?v !rdf:type ?y .
+		! ?v rdf:type ?y .
 	}
 
-	#owl:complementOf2 {
+	rule 2 {
 		?x owl:complementOf ?y .
-		?v !rdf:type ?y .
+		! ?v rdf:type ?y .
 	} => {
 		?v rdf:type ?x .
 	}
 }
 
 # Class union.
-owl:unionOf {
+rule UnionOf {
 	?x owl:unionOf ?list .
 	?list rdf:rest*/rdf:first ?y .
 	?v rdf:type ?y .
@@ -101,31 +106,31 @@ owl:unionOf {
 }
 
 ## Class intersection.
-owl:intersectionOf {
-	#owl:intersectionOf1 {
+group IntersectionOf {
+	rule Base {
 		?x owl:intersectionOf ?list .
-		?v #owl:inIntersectionOf ?list .
+		?v proto-owl:inIntersectionOf ?list .
 	} => {
 		?v rdf:type ?x .
 	}
 
-	#owl:inIntersectionOf1 {
+	rule inIntersectionOf/1 {
 		?list rdf:first ?c .
 		?list rdf:rest ?rest .
 		?v rdf:type ?c .
-		?v #owl:inIntersectionOf ?rest .
+		?v proto-owl:inIntersectionOf ?rest .
 	} => {
-		?v #owl:inIntersectionOf ?list .
+		?v proto-owl:inIntersectionOf ?list .
 	}
 
-	#owl:inIntersectionOf2 {
+	rule inIntersectionOf/2 {
 		# nothing
 	} => {
-		?v #owl:inIntersectionOf rdf:nil .
+		?v proto-owl:inIntersectionOf rdf:nil .
 	}
 }
 
-owl:oneOf {
+rule OneOf {
 	?x owl:oneOf ?list .
 	?list rdf:rest*/rdf:first ?v .
 } => {
