@@ -76,10 +76,10 @@ fn render_formula(
 				scope,
 				"rdfs-exists",
 				'∃',
-				&e.variables,
-				&e.hypothesis,
+				e.variables(),
+				e.hypothesis(),
 			)?;
-			render_formula(out, vocabulary, interpretation, context, scope, &e.inner)
+			render_formula(out, vocabulary, interpretation, context, scope, e.inner())
 		}
 		Formula::ForAll(a) => {
 			render_bindings(

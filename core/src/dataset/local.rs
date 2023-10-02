@@ -128,7 +128,7 @@ impl LocalDataset {
 		}
 	}
 
-	/// Replaces occurences of `b` with `a`.
+	/// Replaces occurences of `a` with `b`.
 	pub fn replace_id<E: From<Contradiction>>(
 		&mut self,
 		a: Id,
@@ -139,7 +139,7 @@ impl LocalDataset {
 			graph.replace_id(a, b, &mut filter)?
 		}
 
-		if let Some(graph) = self.named_graphs.remove(&b) {
+		if let Some(graph) = self.named_graphs.remove(&a) {
 			for (_, mut fact) in graph {
 				fact.replace_id(a, b);
 				if filter(&fact)? {

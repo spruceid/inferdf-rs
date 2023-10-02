@@ -433,15 +433,14 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for R
 			if !outer_variables.is_empty() {
 				match formula.as_existential_mut() {
 					Some(e) => {
-						e.variables.extend(outer_variables);
-						e.variables.sort_unstable_by_key(|x| x.index)
+						e.extend_variables(outer_variables);
 					}
 					None => {
-						formula = inference::rule::Formula::Exists(inference::rule::Exists {
-							variables: outer_variables,
-							hypothesis: inference::rule::Hypothesis::default(),
-							inner: Box::new(formula),
-						});
+						formula = inference::rule::Formula::Exists(inference::rule::Exists::new(
+							outer_variables,
+							inference::rule::Hypothesis::default(),
+							formula,
+						));
 					}
 				}
 			}
@@ -537,11 +536,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 			.inner
 			.build(vocabulary, interpretation, context, scope)?;
 
-		Ok(inference::rule::Exists {
-			variables,
-			hypothesis,
-			inner: Box::new(inner),
-		})
+		Ok(inference::rule::Exists::new(variables, hypothesis, inner))
 	}
 }
 

@@ -28,8 +28,11 @@ group Structure {
 
 	## Union.
 	group Union {
-		rule Format forall ?item {} exists ?field ?format {
+		rule Format exists ?layout ?anyItem {
+			?layout tldr:unionOf ?anyItem . # ensures the union is non-top.
+		} forall ?item {
 			?layout tldr:unionOf ?item .
+		} exists ?field ?format {
 			?item tldr:field ?field .
 			?field tldr:name ?name .
 			?field tldr:format ?format .
@@ -57,7 +60,7 @@ group Structure {
 			?layout tldr:intersectionOf ?item .
 			?item tldr:field ?field .
 			?field tldr:name ?name .
-			?field tldr:format ?field .
+			?field tldr:format ?format .
 		} => {
 			?layout tldr:field ?targetField .
 			?targetField tldr:name ?name .
@@ -98,7 +101,9 @@ group Enumeration {
 	## Intersection.
 	group Intersection {
 		## Intersect format-variants.
-		rule ByFormat forall ?item {
+		rule ByFormat exists ?layout ?anyItem {
+			?layout tldr:intersectionOf ?anyItem . # ensures the intersection is non-empty.
+		} forall ?item {
 			?layout tldr:intersectionOf ?item .
 		} exists ?variant ?format {
 			?item tldr:variant ?variant .
@@ -114,7 +119,9 @@ group Enumeration {
 		## Intersect value-variants.
 		## 
 		## Value-variants sharing the same name must have the same value.
-		rule ByValue forall ?item {
+		rule ByValue exists ?layout ?anyItem {
+			?layout tldr:intersectionOf ?anyItem . # ensures the intersection is non-empty.
+		} forall ?item {
 			?layout tldr:intersectionOf ?item .
 		} exists ?variant ?value {
 			?item tldr:variant ?variant .

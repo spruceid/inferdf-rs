@@ -24,11 +24,11 @@ pub struct Entailment {
 	pub rule: Id,
 
 	/// Rule variables substitution.
-	pub substitution: Vec<Id>,
+	pub substitution: Vec<Option<Id>>,
 }
 
 impl Entailment {
-	pub fn new(rule: Id, substitution: Vec<Id>) -> Self {
+	pub fn new(rule: Id, substitution: Vec<Option<Id>>) -> Self {
 		Self { rule, substitution }
 	}
 }

@@ -104,10 +104,9 @@ impl<T: Instantiate> Instantiate for Signed<T> {
 
 	fn instantiate(
 		&self,
-		substitution: &mut crate::pattern::PatternSubstitution,
-		new_id: impl FnMut() -> Id,
-	) -> Self::Output {
-		Signed(self.0, self.1.instantiate(substitution, new_id))
+		substitution: &crate::pattern::PatternSubstitution,
+	) -> Option<Self::Output> {
+		Some(Signed(self.0, self.1.instantiate(substitution)?))
 	}
 }
 

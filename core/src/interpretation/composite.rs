@@ -219,20 +219,24 @@ impl<V: Vocabulary> Interpretation<V> {
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
-		let (a, b) = self.interpretation.merge(a, b)?;
+		if a == b {
+			Ok((a, b))
+		} else {
+			let (a, b) = self.interpretation.merge(a, b)?;
 
-		// merge in interfaces.
-		for interface in self.interfaces.values_mut() {
-			let more_dependency_ids = interface.source.remove(&b).unwrap();
-			for &dependency_id in &more_dependency_ids {
-				interface.target.insert(dependency_id, a);
+			// merge in interfaces.
+			for interface in self.interfaces.values_mut() {
+				let more_dependency_ids = interface.source.remove(&b).unwrap();
+				for &dependency_id in &more_dependency_ids {
+					interface.target.insert(dependency_id, a);
+				}
+
+				let dependency_ids = interface.source.get_mut(&a).unwrap();
+				dependency_ids.extend(more_dependency_ids);
 			}
 
-			let dependency_ids = interface.source.get_mut(&a).unwrap();
-			dependency_ids.extend(more_dependency_ids);
+			Ok((a, b))
 		}
-
-		Ok((a, b))
 	}
 
 	pub fn split(&mut self, a: Id, b: Id) -> Result<bool, Contradiction> {

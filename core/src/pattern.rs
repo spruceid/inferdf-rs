@@ -585,6 +585,10 @@ impl PatternSubstitution {
 		Self::default()
 	}
 
+	pub fn contains(&self, x: usize) -> bool {
+		self.0.contains_key(&x)
+	}
+
 	pub fn get(&self, x: usize) -> Option<Id> {
 		self.0.get(&x).copied()
 	}
@@ -601,18 +605,18 @@ impl PatternSubstitution {
 		*self.0.entry(x).or_insert_with(f)
 	}
 
-	pub fn to_vec(&self) -> Vec<Id> {
+	pub fn to_vec(&self) -> Vec<Option<Id>> {
 		let mut result = Vec::with_capacity(self.0.len());
 		for i in 0..self.0.len() {
-			result.push(*self.0.get(&i).unwrap())
+			result.push(self.0.get(&i).copied())
 		}
 		result
 	}
 
-	pub fn into_vec(self) -> Vec<Id> {
+	pub fn into_vec(self) -> Vec<Option<Id>> {
 		let mut result = Vec::with_capacity(self.0.len());
 		for i in 0..self.0.len() {
-			result.push(*self.0.get(&i).unwrap())
+			result.push(self.0.get(&i).copied())
 		}
 		result
 	}
@@ -621,24 +625,16 @@ impl PatternSubstitution {
 pub trait Instantiate {
 	type Output;
 
-	fn instantiate(
-		&self,
-		substitution: &mut PatternSubstitution,
-		new_id: impl FnMut() -> Id,
-	) -> Self::Output;
+	fn instantiate(&self, substitution: &PatternSubstitution) -> Option<Self::Output>;
 }
 
 impl Instantiate for IdOrVar {
 	type Output = Id;
 
-	fn instantiate(
-		&self,
-		substitution: &mut PatternSubstitution,
-		new_id: impl FnMut() -> Id,
-	) -> Self::Output {
+	fn instantiate(&self, substitution: &PatternSubstitution) -> Option<Self::Output> {
 		match self {
-			Self::Id(id) => *id,
-			Self::Var(x) => substitution.get_or_insert_with(*x, new_id),
+			Self::Id(id) => Some(*id),
+			Self::Var(x) => substitution.get(*x),
 		}
 	}
 }
@@ -646,15 +642,11 @@ impl Instantiate for IdOrVar {
 impl Instantiate for Pattern {
 	type Output = Triple;
 
-	fn instantiate(
-		&self,
-		substitution: &mut PatternSubstitution,
-		mut new_id: impl FnMut() -> Id,
-	) -> Self::Output {
-		rdf_types::Triple(
-			self.0.instantiate(substitution, &mut new_id),
-			self.1.instantiate(substitution, &mut new_id),
-			self.2.instantiate(substitution, &mut new_id),
-		)
+	fn instantiate(&self, substitution: &PatternSubstitution) -> Option<Self::Output> {
+		Some(rdf_types::Triple(
+			self.0.instantiate(substitution)?,
+			self.1.instantiate(substitution)?,
+			self.2.instantiate(substitution)?,
+		))
 	}
 }

@@ -7,7 +7,8 @@ use rdf_types::Vocabulary;
 use crate::{
 	class::{self, GroupId},
 	dataset::{self, Contradiction, TripleId},
-	pattern, Class, Dataset, Fact, FailibleIteratorWith, Id, Module, Sign, Signed, Triple,
+	pattern, Class, Dataset, Fact, FailibleIteratorWith, Id, IteratorWith, Module, Sign, Signed,
+	Triple,
 };
 
 mod into_global;
@@ -77,6 +78,15 @@ impl<V: Vocabulary, M: Module<V>> SubModule<V, M> {
 				}
 			}
 			None => Ok(true),
+		}
+	}
+
+	pub fn resources<G>(&self, generator: G) -> Resources<V, M, G> {
+		use crate::Interpretation;
+		Resources {
+			interface: &self.interface,
+			inner: self.module.interpretation().resources().map_err(Some),
+			generator,
 		}
 	}
 
@@ -165,6 +175,37 @@ pub trait ResourceGenerator {
 impl<'a, G: ResourceGenerator> ResourceGenerator for &'a mut G {
 	fn new_resource(&mut self) -> Id {
 		G::new_resource(self)
+	}
+}
+
+pub struct Resources<'a, V: 'a + Vocabulary, M: 'a + Module<V>, G> {
+	interface: &'a Interface,
+	inner: Result<
+		<M::Interpretation<'a> as crate::Interpretation<'a, V>>::Resources,
+		Option<M::Error>,
+	>,
+	generator: G,
+}
+
+impl<'a, V: 'a + Vocabulary, M: 'a + Module<V>, G: ResourceGenerator> FailibleIteratorWith<V>
+	for Resources<'a, V, M, G>
+{
+	type Item = Id;
+	type Error = M::Error;
+
+	fn try_next_with(&mut self, vocabulary: &mut V) -> Result<Option<Self::Item>, Self::Error> {
+		match &mut self.inner {
+			Ok(inner) => match inner.next_with(vocabulary) {
+				Some(Ok((id, _))) => {
+					Ok(Some(id.into_global(self.interface, || {
+						self.generator.new_resource()
+					})))
+				}
+				Some(Err(e)) => Err(e),
+				None => Ok(None),
+			},
+			Err(e) => e.take().map(Err).transpose(),
+		}
 	}
 }
 

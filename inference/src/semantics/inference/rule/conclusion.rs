@@ -152,19 +152,15 @@ impl<V: Vocabulary> Interpret<V> for StatementPattern<uninterpreted::Term<V>> {
 impl Instantiate for StatementPattern {
 	type Output = TripleStatement;
 
-	fn instantiate(
-		&self,
-		substitution: &mut PatternSubstitution,
-		mut new_id: impl FnMut() -> Id,
-	) -> Self::Output {
+	fn instantiate(&self, substitution: &PatternSubstitution) -> Option<Self::Output> {
 		match self {
 			Self::Triple(pattern) => {
-				TripleStatement::Triple(pattern.instantiate(substitution, new_id))
+				Some(TripleStatement::Triple(pattern.instantiate(substitution)?))
 			}
-			Self::Eq(a, b) => TripleStatement::Eq(
-				a.instantiate(substitution, &mut new_id),
-				b.instantiate(substitution, &mut new_id),
-			),
+			Self::Eq(a, b) => Some(TripleStatement::Eq(
+				a.instantiate(substitution)?,
+				b.instantiate(substitution)?,
+			)),
 		}
 	}
 }

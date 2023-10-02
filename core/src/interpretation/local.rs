@@ -511,6 +511,10 @@ impl<V: Vocabulary> Interpretation<V> {
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
+		if a == b {
+			return Ok((a, b));
+		}
+
 		if b < a {
 			std::mem::swap(&mut a, &mut b);
 		}

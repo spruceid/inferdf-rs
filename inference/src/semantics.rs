@@ -20,6 +20,12 @@ pub trait ContextReservation: ResourceGenerator {
 
 pub trait Context<V: Vocabulary> {
 	type Error;
+
+	type Resources<'a, G: ResourceGenerator>: 'a + IteratorWith<V, Item = Result<Id, Self::Error>>
+	where
+		Self: 'a,
+		G: 'a;
+
 	type PatternMatching<'a, G: ResourceGenerator>: 'a
 		+ IteratorWith<V, Item = Result<(Fact, bool), Self::Error>>
 	where
@@ -34,6 +40,8 @@ pub trait Context<V: Vocabulary> {
 	fn begin_reservation(&self) -> Self::Reservation<'_>;
 
 	fn apply_reservation(&mut self, generator: Self::CompletedReservation);
+
+	fn resources<'r, G: 'r + ResourceGenerator>(&'r self, generator: G) -> Self::Resources<'r, G>;
 
 	fn pattern_matching<'a, G: 'a + ResourceGenerator>(
 		&'a self,
@@ -170,14 +178,10 @@ impl<V: Vocabulary, T: Interpret<V>> Interpret<V> for MaybeTrusted<T> {
 impl<T: Instantiate> Instantiate for MaybeTrusted<T> {
 	type Output = MaybeTrusted<T::Output>;
 
-	fn instantiate(
-		&self,
-		substitution: &mut PatternSubstitution,
-		new_id: impl FnMut() -> Id,
-	) -> Self::Output {
+	fn instantiate(&self, substitution: &PatternSubstitution) -> Option<Self::Output> {
 		match self {
-			Self::Trusted(t) => MaybeTrusted::Trusted(t.instantiate(substitution, new_id)),
-			Self::Untrusted(t) => MaybeTrusted::Untrusted(t.instantiate(substitution, new_id)),
+			Self::Trusted(t) => Some(MaybeTrusted::Trusted(t.instantiate(substitution)?)),
+			Self::Untrusted(t) => Some(MaybeTrusted::Untrusted(t.instantiate(substitution)?)),
 		}
 	}
 }

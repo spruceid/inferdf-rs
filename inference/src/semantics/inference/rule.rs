@@ -46,12 +46,37 @@ pub struct ForAll<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Exists<T> {
-	pub variables: Vec<Variable>,
-	pub hypothesis: Hypothesis<T>,
-	pub inner: Box<Formula<T>>,
+	variables: Vec<Variable>,
+	hypothesis: Hypothesis<T>,
+	inner: Box<Formula<T>>,
 }
 
 impl<T> Exists<T> {
+	pub fn new(variables: Vec<Variable>, hypothesis: Hypothesis<T>, inner: Formula<T>) -> Self {
+		Self {
+			variables,
+			hypothesis,
+			inner: Box::new(inner),
+		}
+	}
+
+	pub fn variables(&self) -> &[Variable] {
+		&self.variables
+	}
+
+	pub fn hypothesis(&self) -> &Hypothesis<T> {
+		&self.hypothesis
+	}
+
+	pub fn inner(&self) -> &Formula<T> {
+		&self.inner
+	}
+
+	pub fn extend_variables(&mut self, v: impl IntoIterator<Item = Variable>) {
+		self.variables.extend(v);
+		self.variables.sort_unstable_by_key(|x| x.index)
+	}
+
 	fn hypothesis_pattern_from(&self, i: usize) -> Option<&Signed<Pattern<T>>> {
 		if i < self.hypothesis.patterns.len() {
 			self.hypothesis.patterns.get(i)
@@ -168,6 +193,10 @@ impl<T> Formula<T> {
 							}
 						})
 						.collect();
+
+				if a.constraints.is_empty() {
+					panic!("unconstrained universal quantifier")
+				}
 			}
 			Self::Exists(e) => {
 				e.inner

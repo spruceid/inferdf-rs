@@ -77,6 +77,7 @@ where
 	V::Literal: Clone + Eq + Hash,
 {
 	type Error = D::Error;
+	type Resources<'r, G: ResourceGenerator> = Ids<'r, V, D, G> where Self: 'r, G: 'r;
 	type PatternMatching<'r, G: ResourceGenerator> = PatternMatching<'r, V, D, G> where Self: 'r, G: 'r;
 
 	type Reservation<'r> = interpretation::local::Reservation<'r, V> where Self: 'r;
@@ -91,6 +92,13 @@ where
 		generator: <Self::Reservation<'c> as ContextReservation>::CompletedReservation,
 	) {
 		self.apply_reservation(generator)
+	}
+
+	fn resources<'r, G: 'r + ResourceGenerator>(&'r self, generator: G) -> Self::Resources<'r, G> {
+		Ids {
+			dependency: self.dependency.resources(generator),
+			local: self.interpretation.iter(),
+		}
 	}
 
 	fn pattern_matching<'r, G: 'r + ResourceGenerator>(
@@ -136,6 +144,24 @@ where
 			},
 			None => Ok(None),
 		}
+	}
+}
+
+pub struct Ids<'a, V: 'a + Vocabulary, D: 'a + Module<V>, G> {
+	dependency: sub_module::Resources<'a, V, D, G>,
+	local: interpretation::local::Iter<'a, V>,
+}
+
+impl<'a, V: 'a + Vocabulary, D: 'a + Module<V>, G: ResourceGenerator> IteratorWith<V>
+	for Ids<'a, V, D, G>
+{
+	type Item = Result<Id, D::Error>;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
+		self.dependency
+			.try_next_with(vocabulary)
+			.transpose()
+			.or_else(|| self.local.next().map(|(id, _)| Ok(id)))
 	}
 }
 

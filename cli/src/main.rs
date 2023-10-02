@@ -8,7 +8,7 @@ use codespan_reporting::{
 	},
 };
 use contextual::WithContext;
-use inferdf_core::{class::classification, module, Cause, Sign, Signed};
+use inferdf_core::{class::classification, module, uninterpreted, Cause, Id, Sign, Signed};
 use inferdf_inference::{
 	builder::{BuilderInterpretation, MissingStatement},
 	semantics::inference::{rule::TripleStatement, System},
@@ -16,8 +16,12 @@ use inferdf_inference::{
 };
 use locspan::Meta;
 use nquads_syntax::Parse;
-use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral, RdfDisplay};
+use rdf_types::{
+	vocabulary::BlankIdIndex, BlankIdBuf, BlankIdVocabularyMut, IndexVocabulary,
+	InsertIntoVocabulary, MapLiteral, RdfDisplay,
+};
 use std::{
+	collections::HashMap,
 	fs,
 	io::{self, BufReader, BufWriter, Write},
 	path::PathBuf,
@@ -39,6 +43,10 @@ struct Args {
 	/// Input semantics files.
 	#[arg(short)]
 	semantics: Vec<PathBuf>,
+
+	/// Close the input dataset with universally-quantified rules.
+	#[arg(short, long)]
+	close: bool,
 
 	/// Turn debugging information on.
 	#[arg(short, long = "verbose", action = clap::ArgAction::Count)]
@@ -179,6 +187,12 @@ fn main() -> ExitCode {
 		}
 	}
 
+	if args.close {
+		builder
+			.close(&mut vocabulary)
+			.expect("unable to close dataset")
+	}
+
 	if let Err(MissingStatement(Signed(_sign, statement), e)) = builder.check(&mut vocabulary) {
 		match statement {
 			TripleStatement::Triple(t) => {
@@ -211,9 +225,10 @@ fn main() -> ExitCode {
 		return ExitCode::FAILURE;
 	}
 
-	let classification = builder
-		.classify_anonymous_nodes()
-		.expect("unable to classify nodes");
+	// let classification = builder
+	// 	.classify_anonymous_nodes()
+	// 	.expect("unable to classify nodes");
+	let classification = classification::Local::new(Vec::new(), Default::default());
 
 	// TODO apply classification.
 
@@ -273,6 +288,26 @@ enum OutputError {
 	InvalidOutput,
 }
 
+fn term_for(
+	vocabulary: &mut IndexVocabulary,
+	builder: &Builder<IndexVocabulary, module::Composition<IndexVocabulary, ExternModule>, System>,
+	scope: &mut HashMap<Id, BlankIdIndex>,
+	id: Id,
+) -> uninterpreted::Term<IndexVocabulary> {
+	match builder.local_interpretation().terms_of(id).next() {
+		Some(term) => term,
+		None => {
+			let len = scope.len();
+			let v_blank = *scope.entry(id).or_insert_with(|| {
+				let blank_id = BlankIdBuf::from_suffix(&format!("gen:{}", len)).unwrap();
+				vocabulary.insert_owned_blank_id(blank_id)
+			});
+
+			rdf_types::Term::Id(rdf_types::Id::Blank(v_blank))
+		}
+	}
+}
+
 fn produce_output(
 	vocabulary: &mut IndexVocabulary,
 	builder: Builder<IndexVocabulary, module::Composition<IndexVocabulary, ExternModule>, System>,
@@ -283,14 +318,15 @@ fn produce_output(
 ) -> Result<(), OutputError> {
 	match format {
 		Format::NQuads => {
-			let interpretation = builder.local_interpretation();
+			let mut scope = HashMap::new();
 			for q in builder.local_dataset().iter().into_quads() {
-				let s = interpretation.terms_of(*q.subject()).next().unwrap();
-				let p = interpretation.terms_of(*q.predicate()).next().unwrap();
-				let o = interpretation.terms_of(*q.object()).next().unwrap();
+				let s = term_for(vocabulary, &builder, &mut scope, *q.subject());
+				let p = term_for(vocabulary, &builder, &mut scope, *q.predicate());
+				let o = term_for(vocabulary, &builder, &mut scope, *q.object());
 				let g = q
 					.graph()
-					.map(|g| interpretation.terms_of(*g).next().unwrap());
+					.map(|g| term_for(vocabulary, &builder, &mut scope, *g));
+
 				writeln!(
 					output,
 					"{} .",

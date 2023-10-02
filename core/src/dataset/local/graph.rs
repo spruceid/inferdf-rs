@@ -188,24 +188,45 @@ impl Graph {
 		self.remove_triple_with(triple, |s| s.is_negative())
 	}
 
+	pub fn remove_fact(&mut self, index: u32) -> Option<Fact> {
+		let s = self.facts.try_remove(index as usize)?;
+
+		if let Some(r) = self.resources.get_mut(s.value().value().subject()) {
+			r.as_subject.remove(&index);
+		}
+
+		if let Some(r) = self.resources.get_mut(s.value().value().predicate()) {
+			r.as_predicate.remove(&index);
+		}
+
+		if let Some(r) = self.resources.get_mut(s.value().value().object()) {
+			r.as_object.remove(&index);
+		}
+
+		Some(s)
+	}
+
+	/// Removes the resource `id` and returns all the facts containing this resources.
+	///
+	/// The returned facts are also removed from the graph.
 	pub fn remove_resource(&mut self, id: Id) -> Vec<Fact> {
 		let mut facts = Vec::new();
 
 		if let Some(r) = self.resources.remove(&id) {
 			for i in r.as_subject {
-				if let Some(s) = self.facts.try_remove(i as usize) {
+				if let Some(s) = self.remove_fact(i) {
 					facts.push(s)
 				}
 			}
 
 			for i in r.as_predicate {
-				if let Some(s) = self.facts.try_remove(i as usize) {
+				if let Some(s) = self.remove_fact(i) {
 					facts.push(s)
 				}
 			}
 
 			for i in r.as_object {
-				if let Some(s) = self.facts.try_remove(i as usize) {
+				if let Some(s) = self.remove_fact(i) {
 					facts.push(s)
 				}
 			}
@@ -300,13 +321,14 @@ impl Graph {
 	// 	}
 	// }
 
+	/// Replaces the occurrences of id `a` with `b`.
 	pub fn replace_id<E: From<Contradiction>>(
 		&mut self,
 		a: Id,
 		b: Id,
 		mut filter: impl FnMut(&Fact) -> Result<bool, E>,
 	) -> Result<(), E> {
-		for mut fact in self.remove_resource(b) {
+		for mut fact in self.remove_resource(a) {
 			fact.replace_id(a, b);
 			if filter(&fact)? {
 				self.insert(fact)?;

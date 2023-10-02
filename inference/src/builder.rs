@@ -400,16 +400,22 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics<V>> Builder<V, D, S> {
 				}
 			}
 			Signed(Sign::Positive, QuadStatement::Eq(a, b, _)) => {
-				let (a, b) = self.interpretation.merge(a, b)?;
-				self.dataset
-					.replace_id(b, a, |Meta(Signed(sign, triple), _)| {
-						self.dependency.filter_triple(vocabulary, *triple, *sign)
-					})?;
-				stack.replace_id(b, a);
+				if a != b {
+					let (a, b) = self.interpretation.merge(a, b)?;
 
-				for signed_quad in self.dataset.resource_facts(a) {
-					let Meta(Signed(sign, quad), cause) = signed_quad;
-					stack.push(Meta(Signed(sign, QuadStatement::Quad(quad)), cause));
+					// TODO merge in dependency interface.
+					// TODO merge in to_check.
+
+					self.dataset
+						.replace_id(b, a, |Meta(Signed(sign, triple), _)| {
+							self.dependency.filter_triple(vocabulary, *triple, *sign)
+						})?;
+					stack.replace_id(b, a);
+
+					for signed_quad in self.dataset.resource_facts(a) {
+						let Meta(Signed(sign, quad), cause) = signed_quad;
+						stack.push(Meta(Signed(sign, QuadStatement::Quad(quad)), cause));
+					}
 				}
 			}
 			Signed(Sign::Negative, QuadStatement::Eq(a, b, _)) => {

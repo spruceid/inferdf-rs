@@ -225,7 +225,7 @@ impl System {
 			.value()
 			.matching(&mut substitution, triple.into_value()));
 
-		self.deduce_from_rule(vocabulary, context, rule, PatternSubstitution::default())
+		self.deduce_from_rule(vocabulary, context, rule, substitution)
 	}
 
 	fn deduce_from_rule<V: Vocabulary, C: Context<V>>(
@@ -260,7 +260,8 @@ impl System {
 				let new_substitutions = self.find_substitutions(
 					vocabulary,
 					context,
-					&e.hypothesis,
+					e.variables(),
+					e.hypothesis(), // TODO &e.extended_hypothesis(), // use extended hypothesis to pre-filter variables.
 					substitution,
 					None,
 				)?;
@@ -268,7 +269,8 @@ impl System {
 				let mut deduction = Deduction::default();
 
 				for s in new_substitutions {
-					let d = self.deduce_from_formula(vocabulary, context, rule_id, &e.inner, s)?;
+					// TODO s.retain(|x| !new_substitutions.extended_variables().contains(x));
+					let d = self.deduce_from_formula(vocabulary, context, rule_id, e.inner(), s)?;
 					deduction.merge_with(d);
 				}
 
@@ -281,6 +283,7 @@ impl System {
 				let substitutions = self.find_substitutions(
 					vocabulary,
 					context,
+					&a.variables,
 					&a.constraints,
 					substitution,
 					None,
@@ -289,6 +292,7 @@ impl System {
 				for s in substitutions {
 					let d = self.deduce_from_formula(vocabulary, context, rule_id, &a.inner, s)?;
 					if d.is_empty() {
+						// TODO `d` might be empty even if the conclusion is reached.
 						return Ok(Deduction::default());
 					} else {
 						deduction.merge_with(d)
@@ -301,9 +305,14 @@ impl System {
 				let mut deduction =
 					SubDeduction::new(Entailment::new(rule_id, substitution.to_vec()));
 
+				for x in &conclusion.variables {
+					substitution.bind(x.index, context.new_resource());
+				}
+
 				for statement in &conclusion.statements {
-					deduction
-						.insert(statement.instantiate(&mut substitution, || context.new_resource()))
+					if let Some(s) = statement.instantiate(&substitution) {
+						deduction.insert(s)
+					}
 				}
 
 				Ok(deduction.into())
@@ -315,27 +324,26 @@ impl System {
 		&self,
 		vocabulary: &mut V,
 		context: &mut C,
+		variables: &[rule::Variable],
 		hypothesis: &rule::Hypothesis,
 		initial_substitution: PatternSubstitution,
 		excluded_pattern: Option<usize>,
 	) -> Result<Vec<PatternSubstitution>, C::Error> {
-		if hypothesis.is_empty() {
-			todo!()
-		} else {
-			let reservation = RefCell::new(context.begin_reservation());
+		let reservation = RefCell::new(context.begin_reservation());
 
-			struct Generator<'c, 'a, V: Vocabulary, C: 'c + Context<V>>(
-				&'a RefCell<C::Reservation<'c>>,
-			);
+		struct Generator<'c, 'a, V: Vocabulary, C: 'c + Context<V>>(
+			&'a RefCell<C::Reservation<'c>>,
+		);
 
-			impl<'c, 'a, V: Vocabulary, C: 'c + Context<V>> ResourceGenerator for Generator<'c, 'a, V, C> {
-				fn new_resource(&mut self) -> Id {
-					let mut r = self.0.borrow_mut();
-					r.new_resource()
-				}
+		impl<'c, 'a, V: Vocabulary, C: 'c + Context<V>> ResourceGenerator for Generator<'c, 'a, V, C> {
+			fn new_resource(&mut self) -> Id {
+				let mut r = self.0.borrow_mut();
+				r.new_resource()
 			}
+		}
 
-			let substitutions = hypothesis
+		let substitutions = {
+			hypothesis
 				.patterns
 				.iter()
 				.copied()
@@ -359,19 +367,69 @@ impl System {
 						.into_value()
 						.matching(&mut substitution, m.into_triple().0)
 					{
-						// TODO widen.
 						Some(substitution)
 					} else {
 						None
 					}
 				})
-				.try_collect_with(vocabulary)?;
+				.try_flat_map(|s| {
+					let r = if variables.iter().all(|x| s.contains(x.index)) {
+						OnceOrMore::<Result<PatternSubstitution, C::Error>, _>::Once(Some(Ok(s)))
+					} else {
+						let continue_s = s.clone();
+						let context = &*context;
+						let reservation = &reservation;
+						OnceOrMore::more::<V>(
+							variables
+								.iter()
+								.filter_map(move |x| {
+									if s.contains(x.index) {
+										None
+									} else {
+										Some(context.resources(Generator::<V, C>(reservation)).map(
+											move |r: Result<Id, C::Error>| {
+												r.map(|id| (x.index, id))
+											},
+										))
+									}
+								})
+								.search(continue_s, |substitution, (x, id)| {
+									let mut substitution = substitution.clone();
+									substitution.bind(x, id);
+									Some(substitution)
+								}),
+						)
+					};
 
-			let reservation = reservation.into_inner().end();
-			context.apply_reservation(reservation);
+					r
+				})
+				.try_collect_with(vocabulary)?
+		};
 
-			Ok(substitutions)
-		}
+		// for s in substitutions {
+		// 	variables
+		// 		.iter()
+		// 		.filter_map(|x| {
+		// 			if s.contains(x) {
+		// 				None
+		// 			} else {
+		// 				Some(context
+		// 					.resources(Generator::<V, C>(&reservation))
+		// 					.map(move |r: Result<Id, C::Error>| r.map(|id| (x.index, id))))
+		// 			}
+		// 		})
+		// 		.search(initial_substitution, |substitution, (x, id)| {
+		// 			let mut substitution = substitution.clone();
+		// 			substitution.bind(x, id);
+		// 			Some(substitution)
+		// 		})
+		// 		.try_collect_with(vocabulary)?
+		// }
+
+		let reservation = reservation.into_inner().end();
+		context.apply_reservation(reservation);
+
+		Ok(substitutions)
 	}
 }
 
@@ -403,5 +461,30 @@ where
 		let deduction = self.deduce_from_universal_rules(vocabulary, context)?;
 		deduction.collect(entailment_index, new_triple);
 		Ok(())
+	}
+}
+
+enum OnceOrMore<T, I> {
+	Once(Option<T>),
+	More(I),
+}
+
+impl<T, I> OnceOrMore<T, I> {
+	pub fn more<V>(i: I) -> Self
+	where
+		I: IteratorWith<V, Item = T>,
+	{
+		Self::More(i)
+	}
+}
+
+impl<T, I: IteratorWith<V, Item = T>, V> IteratorWith<V> for OnceOrMore<T, I> {
+	type Item = T;
+
+	fn next_with(&mut self, vocabulary: &mut V) -> Option<Self::Item> {
+		match self {
+			Self::Once(t) => t.take(),
+			Self::More(i) => i.next_with(vocabulary),
+		}
 	}
 }
