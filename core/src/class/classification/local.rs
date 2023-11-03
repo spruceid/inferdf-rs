@@ -24,6 +24,12 @@ impl LocalClassification {
 	}
 }
 
+impl Default for LocalClassification {
+	fn default() -> Self {
+		Self::new(Vec::new(), HashMap::new())
+	}
+}
+
 pub struct Layer {
 	pub groups: Vec<group::Description>,
 }

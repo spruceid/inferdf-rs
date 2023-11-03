@@ -12,7 +12,11 @@ pub use local::Interpretation as Local;
 #[error("equality contradiction")]
 pub struct Contradiction(pub Id, pub Id);
 
-pub trait Resource<'a, V: Vocabulary>: Clone {
+pub trait Resource<'a, V: Vocabulary>: Clone
+where
+	V::Iri: 'a,
+	V::Literal: 'a,
+{
 	type Error;
 	type Iris: 'a + IteratorWith<V, Item = Result<V::Iri, Self::Error>>;
 	type Literals: 'a + IteratorWith<V, Item = Result<V::Literal, Self::Error>>;
@@ -29,6 +33,29 @@ pub trait Resource<'a, V: Vocabulary>: Clone {
 			as_iri: self.as_iri(),
 			as_literal: self.as_literal(),
 		}
+	}
+}
+
+impl<'a, V: Vocabulary> Resource<'a, V> for std::convert::Infallible
+where
+	V::Iri: 'a,
+	V::Literal: 'a,
+{
+	type Error = std::convert::Infallible;
+	type Iris = std::iter::Empty<Result<V::Iri, Self::Error>>;
+	type Literals = std::iter::Empty<Result<V::Literal, Self::Error>>;
+	type DifferentFrom = std::iter::Empty<Result<Id, Self::Error>>;
+
+	fn as_iri(&self) -> Self::Iris {
+		unreachable!()
+	}
+
+	fn as_literal(&self) -> Self::Literals {
+		unreachable!()
+	}
+
+	fn different_from(&self) -> Self::DifferentFrom {
+		unreachable!()
 	}
 }
 
@@ -71,7 +98,11 @@ impl<'a, V: Vocabulary, R: Resource<'a, V>> IteratorWith<V> for OptionalResource
 }
 
 /// Interpretation.
-pub trait Interpretation<'a, V: Vocabulary>: Clone {
+pub trait Interpretation<'a, V: Vocabulary>: Clone
+where
+	V::Iri: 'a,
+	V::Literal: 'a,
+{
 	type Error;
 
 	type Resource: Resource<'a, V, Error = Self::Error>;
@@ -221,6 +252,50 @@ pub trait Interpretation<'a, V: Vocabulary>: Clone {
 		}
 
 		Ok(result)
+	}
+}
+
+impl<'a, V: Vocabulary> Interpretation<'a, V> for ()
+where
+	V::Iri: 'a,
+	V::Literal: 'a,
+{
+	type Error = std::convert::Infallible;
+	type Resource = std::convert::Infallible;
+	type Resources = std::iter::Empty<Result<(Id, Self::Resource), Self::Error>>;
+	type Iris = std::iter::Empty<Result<(V::Iri, Id), Self::Error>>;
+	type Literals = std::iter::Empty<Result<(V::Literal, Id), Self::Error>>;
+
+	fn resources(&self) -> Result<Self::Resources, Self::Error> {
+		Ok(std::iter::empty())
+	}
+
+	fn get(&self, _id: Id) -> Result<Option<Self::Resource>, Self::Error> {
+		Ok(None)
+	}
+
+	fn iris(&self) -> Result<Self::Iris, Self::Error> {
+		Ok(std::iter::empty())
+	}
+
+	fn iri_interpretation(
+		&self,
+		_vocabulary: &mut V,
+		_iri: V::Iri,
+	) -> Result<Option<Id>, Self::Error> {
+		Ok(None)
+	}
+
+	fn literals(&self) -> Result<Self::Literals, Self::Error> {
+		Ok(std::iter::empty())
+	}
+
+	fn literal_interpretation(
+		&self,
+		_vocabulary: &mut V,
+		_literal: V::Literal,
+	) -> Result<Option<Id>, Self::Error> {
+		Ok(None)
 	}
 }
 

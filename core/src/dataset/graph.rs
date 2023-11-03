@@ -16,6 +16,24 @@ pub trait Resource<'a>: Clone {
 	fn as_object(&self) -> Self::AsObject;
 }
 
+impl<'a> Resource<'a> for std::convert::Infallible {
+	type AsSubject = std::iter::Empty<u32>;
+	type AsPredicate = std::iter::Empty<u32>;
+	type AsObject = std::iter::Empty<u32>;
+
+	fn as_subject(&self) -> Self::AsSubject {
+		unreachable!()
+	}
+
+	fn as_predicate(&self) -> Self::AsPredicate {
+		unreachable!()
+	}
+
+	fn as_object(&self) -> Self::AsObject {
+		unreachable!()
+	}
+}
+
 pub trait Graph<'a, V>: Clone {
 	type Error;
 	type Resource: Resource<'a>;
@@ -87,6 +105,37 @@ pub trait Graph<'a, V>: Clone {
 		pattern: pattern::Canonical,
 	) -> Result<Matching<'a, V, Self>, Self::Error> {
 		self.full_pattern_matching(pattern, None)
+	}
+}
+
+impl<'a, V> Graph<'a, V> for () {
+	type Error = std::convert::Infallible;
+	type Resource = std::convert::Infallible;
+	type Resources = std::iter::Empty<Result<(Id, Self::Resource), Self::Error>>;
+	type Triples = std::iter::Empty<Result<(u32, GraphFact), Self::Error>>;
+
+	fn get_resource(&self, _id: Id) -> Result<Option<Self::Resource>, Self::Error> {
+		Ok(None)
+	}
+
+	fn resources(&self) -> Self::Resources {
+		std::iter::empty()
+	}
+
+	fn get_triple(
+		&self,
+		_vocabulary: &mut V,
+		_index: u32,
+	) -> Result<Option<GraphFact>, Self::Error> {
+		Ok(None)
+	}
+
+	fn len(&self) -> u32 {
+		0
+	}
+
+	fn triples(&self) -> Self::Triples {
+		std::iter::empty()
 	}
 }
 

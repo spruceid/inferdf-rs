@@ -11,7 +11,10 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-authors = ["Timothée Haudebourg <author@haudebourg.net>"]
+authors = [
+	"Timothée Haudebourg <timothee@haudebourg.net>",
+	"Spruce Systems Inc."
+]
 edition = "2021"
 
 [workspace.dependencies]
@@ -32,7 +35,7 @@ locspan = { version = "0.7.13", features = ["reporting"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.40"
 normal-form = "0.1.1"
-paged = { path = "/home/timothee/Projets/utils/data-structures/paged/paged" }
+paged = "0.1.1"
 clap = { version = "4.0", features = ["derive"] }
 stderrlog = "0.5.4"
 codespan-reporting = "0.11.1"

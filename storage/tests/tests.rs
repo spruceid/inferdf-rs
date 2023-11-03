@@ -1,13 +1,11 @@
-use std::{
-	fs,
-	io::{BufReader, BufWriter, Cursor},
-};
+use std::io::{BufReader, BufWriter, Cursor};
 
 use contextual::WithContext;
 use inferdf_core::{
-	interpretation, uninterpreted, Cause, Dataset, Interpretation, Module, Sign, Signed,
+	class::classification, module, uninterpreted, Cause, Dataset, Interpretation, IteratorWith,
+	Module, Sign, Signed,
 };
-use inferdf_inference::{builder, semantics, Builder};
+use inferdf_inference::{semantics, Builder};
 use locspan::Meta;
 use nquads_syntax::Parse;
 use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral};
@@ -39,15 +37,7 @@ fn build_module(
 	vocabulary: &mut IndexVocabulary,
 	quads: &[uninterpreted::Quad<IndexVocabulary>],
 ) -> Vec<u8> {
-	let dependencies = builder::Dependencies::<
-		IndexVocabulary,
-		inferdf_storage::Module<IndexVocabulary, fs::File>,
-	>::default();
-	let mut builder = Builder::new(
-		dependencies,
-		interpretation::Composite::new(),
-		semantics::inference::System::new(),
-	);
+	let mut builder = Builder::new((), semantics::inference::System::new());
 
 	for quad in quads {
 		let quad = builder.insert_quad(vocabulary, quad.clone()).unwrap();
@@ -60,24 +50,28 @@ fn build_module(
 			.unwrap();
 	}
 
-	let classification = builder.classify_anonymous_nodes().unwrap();
+	// let classification = builder.classify_anonymous_nodes().unwrap();
+	let classification = classification::Local::default();
 
-	let mut cursor = Cursor::new(Vec::new());
+	let mut cursor = BufWriter::new(Cursor::new(Vec::new()));
 
 	{
-		let mut output = BufWriter::new(&mut cursor);
-		inferdf_storage::build(
-			&*vocabulary,
-			builder.local_interpretation().local_interpretation(),
+		let module = module::LocalRef::new(
+			builder.local_interpretation(),
 			builder.local_dataset(),
 			&classification,
-			&mut output,
-			inferdf_storage::BuildOptions { page_size: 512 },
+		);
+
+		inferdf_storage::build(
+			vocabulary,
+			&module,
+			&mut cursor,
+			inferdf_storage::build::Options::default(),
 		)
-		.unwrap();
+		.expect("unable to write BRDF module");
 	}
 
-	cursor.into_inner()
+	cursor.into_inner().unwrap().into_inner()
 }
 
 fn read_module(
@@ -89,8 +83,10 @@ fn read_module(
 		inferdf_storage::Module::<IndexVocabulary, _>::new(BufReader::new(&mut cursor)).unwrap();
 	let mut result = Vec::new();
 
-	for quad in module.dataset().iter().into_quads() {
-		let Meta(Signed(sign, quad), _) = quad.unwrap();
+	let mut facts = module.dataset().iter();
+	while let Some(fact) = facts.next_with(vocabulary) {
+		let (graph, _, Meta(Signed(sign, triple), _)) = fact.unwrap();
+		let quad = triple.into_quad(graph);
 		assert!(sign.is_positive());
 		result.extend(
 			module

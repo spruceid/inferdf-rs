@@ -88,6 +88,14 @@ pub trait IteratorWith<V>: Sized {
 	}
 }
 
+impl<V, T> IteratorWith<V> for std::iter::Empty<T> {
+	type Item = T;
+
+	fn next_with(&mut self, _vocabulary: &mut V) -> Option<Self::Item> {
+		None
+	}
+}
+
 pub struct TryFlatMap<I, J, F> {
 	inner: I,
 	f: F,

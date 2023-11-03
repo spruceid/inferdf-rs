@@ -38,3 +38,28 @@ pub trait Module<V: Vocabulary> {
 	where
 		V: 'a;
 }
+
+impl<V: Vocabulary> Module<V> for () {
+	type Error = std::convert::Infallible;
+	type Dataset<'a> = () where Self: 'a, V: 'a;
+	type Interpretation<'a> = () where Self: 'a, V: 'a;
+	type Classification<'a> = () where Self: 'a, V: 'a;
+
+	fn dataset<'a>(&'a self) -> Self::Dataset<'a>
+	where
+		V: 'a,
+	{
+	}
+
+	fn interpretation<'a>(&'a self) -> Self::Interpretation<'a>
+	where
+		V: 'a,
+	{
+	}
+
+	fn classification<'a>(&'a self) -> Self::Classification<'a>
+	where
+		V: 'a,
+	{
+	}
+}

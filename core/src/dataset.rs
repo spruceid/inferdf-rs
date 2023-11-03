@@ -89,6 +89,24 @@ pub trait Dataset<'a, V>: Clone {
 	}
 }
 
+impl<'a, V> Dataset<'a, V> for () {
+	type Error = std::convert::Infallible;
+	type Graph = ();
+	type Graphs = std::iter::Empty<Result<(Option<Id>, Self::Graph), Self::Error>>;
+
+	fn graphs(&self) -> Self::Graphs {
+		std::iter::empty()
+	}
+
+	fn graph(&self, id: Option<Id>) -> Result<Option<Self::Graph>, Self::Error> {
+		if id.is_some() {
+			Ok(None)
+		} else {
+			Ok(Some(()))
+		}
+	}
+}
+
 /// Triple identifier in a dataset.
 pub struct TripleId {
 	/// Identifier of the graph the triple is in.
