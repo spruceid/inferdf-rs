@@ -1,3 +1,4 @@
+pub mod builder;
 pub mod cause;
 pub mod class;
 pub mod dataset;
@@ -5,9 +6,11 @@ mod id;
 pub mod interpretation;
 pub mod module;
 pub mod pattern;
+pub mod semantics;
 pub mod uninterpreted;
 mod utils;
 
+pub use builder::Builder;
 pub use cause::*;
 pub use class::{Class, Classification};
 pub use dataset::Dataset;
@@ -16,6 +19,7 @@ pub use interpretation::Interpretation;
 use locspan::Meta;
 pub use module::Module;
 pub use pattern::Pattern;
+pub use semantics::Semantics;
 pub use utils::*;
 
 pub type Triple = rdf_types::Triple<Id, Id, Id>;

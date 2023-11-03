@@ -1,13 +1,12 @@
 use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
-use inferdf_core::{
+use inferdf::{
 	interpretation::{Interpret, InterpretationMut},
 	pattern::{IdOrVar, Instantiate, PatternSubstitution},
-	uninterpreted, Id, Pattern, Signed, Triple,
+	semantics::{MaybeTrusted, TripleStatement},
+	uninterpreted, Id, Pattern, Signed,
 };
-
-use crate::{builder::QuadStatement, semantics::MaybeTrusted};
 
 use super::Variable;
 
@@ -161,21 +160,6 @@ impl Instantiate for StatementPattern {
 				a.instantiate(substitution)?,
 				b.instantiate(substitution)?,
 			)),
-		}
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TripleStatement {
-	Triple(Triple),
-	Eq(Id, Id),
-}
-
-impl TripleStatement {
-	pub fn with_graph(self, g: Option<Id>) -> QuadStatement {
-		match self {
-			Self::Triple(t) => QuadStatement::Quad(t.into_quad(g)),
-			Self::Eq(a, b) => QuadStatement::Eq(a, b, g),
 		}
 	}
 }

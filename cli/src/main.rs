@@ -8,11 +8,12 @@ use codespan_reporting::{
 	},
 };
 use contextual::WithContext;
-use inferdf_core::{class::classification, module, uninterpreted, Cause, Id, Sign, Signed};
-use inferdf_inference::{
+use inferdf::{
 	builder::{BuilderInterpretation, MissingStatement},
-	semantics::inference::{rule::TripleStatement, System},
-	Builder,
+	class::classification,
+	module,
+	semantics::TripleStatement,
+	uninterpreted, Builder, Cause, Id, Sign, Signed,
 };
 use locspan::Meta;
 use nquads_syntax::Parse;
@@ -123,7 +124,7 @@ fn main() -> ExitCode {
 
 	let mut interpretation = BuilderInterpretation::new(module::Composition::new(dependencies));
 
-	let mut system = System::new();
+	let mut system = inferdf_deduction::System::new();
 	let mut files = SimpleFiles::new();
 	for filename in args.semantics {
 		use inferdf_rdfs::{Build, Parse};
@@ -290,7 +291,11 @@ enum OutputError {
 
 fn term_for(
 	vocabulary: &mut IndexVocabulary,
-	builder: &Builder<IndexVocabulary, module::Composition<IndexVocabulary, ExternModule>, System>,
+	builder: &Builder<
+		IndexVocabulary,
+		module::Composition<IndexVocabulary, ExternModule>,
+		inferdf_deduction::System,
+	>,
 	scope: &mut HashMap<Id, BlankIdIndex>,
 	id: Id,
 ) -> uninterpreted::Term<IndexVocabulary> {
@@ -310,7 +315,11 @@ fn term_for(
 
 fn produce_output(
 	vocabulary: &mut IndexVocabulary,
-	builder: Builder<IndexVocabulary, module::Composition<IndexVocabulary, ExternModule>, System>,
+	builder: Builder<
+		IndexVocabulary,
+		module::Composition<IndexVocabulary, ExternModule>,
+		inferdf_deduction::System,
+	>,
 	classification: classification::Local,
 	format: Format,
 	format_options: FormatOptions,

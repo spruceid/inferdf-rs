@@ -1,6 +1,6 @@
 use std::fmt;
 
-use inferdf_inference::semantics::Trust;
+use inferdf::semantics::Trust;
 use iref::{IriBuf, IriRefBuf};
 use locspan::Meta;
 

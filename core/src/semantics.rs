@@ -1,21 +1,31 @@
-use inferdf_core::{
+use crate::{
 	interpretation::{Interpret, InterpretationMut},
 	module::sub_module::ResourceGenerator,
 	pattern::{self, Instantiate, PatternSubstitution},
-	Cause, Entailment, Fact, Id, IteratorWith, Signed, Triple,
+	Cause, Entailment, Fact, Id, IteratorWith, Quad, ReplaceId, Signed, Triple,
 };
 
-pub mod inference;
-
-use inference::rule::TripleStatement;
 use locspan::Meta;
 use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
-pub trait ContextReservation: ResourceGenerator {
-	type CompletedReservation;
+pub trait Semantics<V: Vocabulary> {
+	fn deduce<C: Context<V>>(
+		&self,
+		vocabulary: &mut V,
+		context: &mut C,
+		triple: Signed<Triple>,
+		entailment_index: impl FnMut(Entailment) -> u32,
+		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
+	) -> Result<(), C::Error>;
 
-	fn end(self) -> Self::CompletedReservation;
+	fn close<C: Context<V>>(
+		&self,
+		vocabulary: &mut V,
+		context: &mut C,
+		entailment_index: impl FnMut(Entailment) -> u32,
+		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
+	) -> Result<(), C::Error>;
 }
 
 pub trait Context<V: Vocabulary> {
@@ -60,23 +70,43 @@ pub trait Context<V: Vocabulary> {
 	) -> Result<Option<V::Literal>, Self::Error>;
 }
 
-pub trait Semantics<V: Vocabulary> {
-	fn deduce<C: Context<V>>(
-		&self,
-		vocabulary: &mut V,
-		context: &mut C,
-		triple: Signed<Triple>,
-		entailment_index: impl FnMut(Entailment) -> u32,
-		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
-	) -> Result<(), C::Error>;
+pub trait ContextReservation: ResourceGenerator {
+	type CompletedReservation;
 
-	fn close<C: Context<V>>(
-		&self,
-		vocabulary: &mut V,
-		context: &mut C,
-		entailment_index: impl FnMut(Entailment) -> u32,
-		new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement>>, Cause>),
-	) -> Result<(), C::Error>;
+	fn end(self) -> Self::CompletedReservation;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TripleStatement {
+	Triple(Triple),
+	Eq(Id, Id),
+}
+
+impl TripleStatement {
+	pub fn with_graph(self, g: Option<Id>) -> QuadStatement {
+		match self {
+			Self::Triple(t) => QuadStatement::Quad(t.into_quad(g)),
+			Self::Eq(a, b) => QuadStatement::Eq(a, b, g),
+		}
+	}
+}
+
+pub enum QuadStatement {
+	Quad(Quad),
+	Eq(Id, Id, Option<Id>),
+}
+
+impl ReplaceId for QuadStatement {
+	fn replace_id(&mut self, a: Id, b: Id) {
+		match self {
+			Self::Quad(t) => t.replace_id(a, b),
+			Self::Eq(c, d, g) => {
+				c.replace_id(a, b);
+				d.replace_id(a, b);
+				g.replace_id(a, b);
+			}
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

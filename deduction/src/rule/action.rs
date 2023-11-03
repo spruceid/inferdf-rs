@@ -1,4 +1,4 @@
-use inferdf_core::{interpretation::{Interpret, InterpretationMut}, uninterpreted, Id};
+use inferdf::{interpretation::{Interpret, InterpretationMut}, uninterpreted, Id};
 use rdf_types::{Vocabulary, InsertIntoVocabulary, MapLiteral};
 use serde::{Deserialize, Serialize};
 use super::{Conclusion, Template};

@@ -1,4 +1,5 @@
 mod replace_id;
+pub mod scc;
 mod search;
 mod sign;
 
@@ -6,6 +7,7 @@ use std::hash::Hash;
 
 use hashbrown::{HashMap, HashSet};
 pub use replace_id::*;
+pub use scc::SccGraph;
 pub use search::*;
 pub use sign::*;
 

@@ -1,7 +1,7 @@
 use std::io;
 
 use educe::Educe;
-use inferdf_core::{GraphFact, Id, IteratorWith};
+use inferdf::{GraphFact, Id, IteratorWith};
 use paged::{cache::UnboundRef, no_context_mut, UnboundSliceIter};
 use rdf_types::Vocabulary;
 
@@ -21,9 +21,7 @@ impl<'a, V: Vocabulary, R> Graph<'a, V, R> {
 	}
 }
 
-impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a, V>
-	for Graph<'a, V, R>
-{
+impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf::dataset::Graph<'a, V> for Graph<'a, V, R> {
 	type Error = Error;
 
 	type Resource = Resource<'a>;
@@ -73,7 +71,7 @@ impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::dataset::Graph<'a,
 		&self,
 		_vocabulary: &mut V,
 		index: u32,
-	) -> Result<Option<inferdf_core::GraphFact>, Self::Error> {
+	) -> Result<Option<inferdf::GraphFact>, Self::Error> {
 		self.module
 			.reader
 			.get(
@@ -92,7 +90,7 @@ pub struct Resource<'a> {
 	r: paged::Ref<'a, header::GraphResource, UnboundRef<header::GraphResource>>,
 }
 
-impl<'a> inferdf_core::dataset::graph::Resource<'a> for Resource<'a> {
+impl<'a> inferdf::dataset::graph::Resource<'a> for Resource<'a> {
 	type AsSubject = ResourceOccurrences<'a>;
 	type AsPredicate = ResourceOccurrences<'a>;
 	type AsObject = ResourceOccurrences<'a>;

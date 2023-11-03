@@ -1,6 +1,6 @@
 use std::io;
 
-use inferdf_core::{
+use inferdf::{
 	class::{group, GroupId},
 	Class, Id, IteratorWith,
 };
@@ -23,7 +23,7 @@ impl<'a, V: Vocabulary, R> Classification<'a, V, R> {
 
 pub type DescriptionRef<'a> = paged::Ref<'a, header::GroupById, UnboundRef<group::Description>>;
 
-impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::Classification<'a, V>
+impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf::Classification<'a, V>
 	for Classification<'a, V, R>
 {
 	type Error = Error;

@@ -1,13 +1,12 @@
 use hashbrown::HashMap;
-use inferdf_core::{
-	class::{self, Class},
-	Id, Signed,
-};
 use normal_form::Normalize;
 
-use crate::utils::scc::Components;
-
 use super::{LayerClass, LayerGroupsBuilder, Node, ResourceNode};
+use crate::{
+	class::{self, Class},
+	utils::scc::Components,
+	Id, Signed,
+};
 
 pub(crate) fn compute_component(
 	components: &Components<Node>,

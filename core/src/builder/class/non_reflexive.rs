@@ -1,10 +1,11 @@
 use hashbrown::HashMap;
-use inferdf_core::{
+
+use crate::{
+	builder::class::ResourceNode,
 	class::{self, Class},
+	utils::scc::Components,
 	Id, Signed,
 };
-
-use crate::{builder::class::ResourceNode, utils::scc::Components};
 
 use super::{LayerClass, LayerGroupsBuilder, Node};
 

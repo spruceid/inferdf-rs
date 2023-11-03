@@ -2,7 +2,7 @@
 members = [
 	"core",
 	"storage",
-	"inference",
+	"deduction",
 	"rdfs",
 	"cli"
 ]
@@ -18,8 +18,8 @@ authors = [
 edition = "2021"
 
 [workspace.dependencies]
-inferdf-core = { path = "core" }
-inferdf-inference = { path = "inference" }
+inferdf = { path = "core" }
+inferdf-deduction = { path = "deduction" }
 inferdf-storage = { path = "storage" }
 inferdf-rdfs = { path = "rdfs" }
 log = "0.4.17"

@@ -5,7 +5,7 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-inferdf-core.workspace = true
+inferdf.workspace = true
 iref.workspace = true
 rdf-types.workspace = true
 thiserror.workspace = true
@@ -16,6 +16,6 @@ educe.workspace = true
 paged = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
-inferdf-inference.workspace = true
+inferdf-deduction.workspace = true
 nquads-syntax.workspace = true
 contextual.workspace = true

@@ -1,7 +1,7 @@
 use std::io;
 
 use educe::Educe;
-use inferdf_core::{Id, IteratorWith};
+use inferdf::{Id, IteratorWith};
 use paged::no_context_mut;
 use rdf_types::Vocabulary;
 
@@ -25,7 +25,7 @@ impl<'a, V: Vocabulary, R> Dataset<'a, V, R> {
 	}
 }
 
-impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf_core::Dataset<'a, V> for Dataset<'a, V, R> {
+impl<'a, V: Vocabulary, R: io::Seek + io::Read> inferdf::Dataset<'a, V> for Dataset<'a, V, R> {
 	type Error = Error;
 
 	type Graph = Graph<'a, V, R>;

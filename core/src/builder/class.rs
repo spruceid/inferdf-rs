@@ -5,16 +5,15 @@ use std::hash::Hash;
 
 use hashbrown::{HashMap, HashSet};
 use indexmap::IndexSet;
-use inferdf_core::{
-	class::{self, classification, Class},
-	Id, Module, Signed,
-};
 use locspan::Meta;
 use rdf_types::Vocabulary;
 
-use crate::utils::SccGraph;
-
 use super::Builder;
+use crate::{
+	class::{self, classification, Class},
+	utils::SccGraph,
+	Id, Module, Signed,
+};
 
 mod non_reflexive;
 mod reflexive;

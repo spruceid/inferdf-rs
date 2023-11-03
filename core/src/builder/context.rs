@@ -2,7 +2,7 @@ use locspan::Meta;
 use rdf_types::Vocabulary;
 use std::hash::Hash;
 
-use inferdf_core::{
+use crate::{
 	dataset::{self, Dataset},
 	interpretation::{
 		self,
@@ -12,10 +12,10 @@ use inferdf_core::{
 		sub_module::{self, ResourceGenerator},
 		SubModule,
 	},
-	pattern, Fact, FailibleIteratorWith, Id, Interpretation, IteratorWith, Module, Sign, Signed,
+	pattern,
+	semantics::{self, ContextReservation},
+	Fact, FailibleIteratorWith, Id, Interpretation, IteratorWith, Module, Sign, Signed,
 };
-
-use crate::semantics::{self, ContextReservation};
 
 // use super::{Data, DependenciesIter};
 

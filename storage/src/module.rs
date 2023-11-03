@@ -50,7 +50,7 @@ impl<V: Vocabulary, R: io::Seek + io::Read> Module<V, R> {
 	}
 }
 
-impl<V: VocabularyMut, R: io::Seek + io::Read> inferdf_core::Module<V> for Module<V, R>
+impl<V: VocabularyMut, R: io::Seek + io::Read> inferdf::Module<V> for Module<V, R>
 where
 	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
 	V::Iri: Clone,

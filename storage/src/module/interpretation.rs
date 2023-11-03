@@ -1,7 +1,7 @@
 use std::io;
 
 use educe::Educe;
-use inferdf_core::{Id, IteratorWith};
+use inferdf::{Id, IteratorWith};
 use iref::Iri;
 use langtag::LanguageTag;
 use paged::{no_context_mut, ContextualIterator};
@@ -23,7 +23,7 @@ impl<'a, V: Vocabulary, R> Interpretation<'a, V, R> {
 	}
 }
 
-impl<'a, V: VocabularyMut, R: io::Seek + io::Read> inferdf_core::Interpretation<'a, V>
+impl<'a, V: VocabularyMut, R: io::Seek + io::Read> inferdf::Interpretation<'a, V>
 	for Interpretation<'a, V, R>
 where
 	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,
@@ -154,7 +154,7 @@ pub struct Resource<'a, V: Vocabulary, R> {
 	r: paged::EntryRef<'a, header::InterpretedResource>,
 }
 
-impl<'a, V: VocabularyMut, R: io::Seek + io::Read> inferdf_core::interpretation::Resource<'a, V>
+impl<'a, V: VocabularyMut, R: io::Seek + io::Read> inferdf::interpretation::Resource<'a, V>
 	for Resource<'a, V, R>
 where
 	V: LiteralVocabulary<Type = literal::Type<V::Iri, V::LanguageTag>>,

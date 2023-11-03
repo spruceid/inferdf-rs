@@ -1,11 +1,11 @@
 use std::io::{BufReader, BufWriter, Cursor};
 
 use contextual::WithContext;
-use inferdf_core::{
+use inferdf::Builder;
+use inferdf::{
 	class::classification, module, uninterpreted, Cause, Dataset, Interpretation, IteratorWith,
 	Module, Sign, Signed,
 };
-use inferdf_inference::{semantics, Builder};
 use locspan::Meta;
 use nquads_syntax::Parse;
 use rdf_types::{IndexVocabulary, InsertIntoVocabulary, MapLiteral};
@@ -37,7 +37,7 @@ fn build_module(
 	vocabulary: &mut IndexVocabulary,
 	quads: &[uninterpreted::Quad<IndexVocabulary>],
 ) -> Vec<u8> {
-	let mut builder = Builder::new((), semantics::inference::System::new());
+	let mut builder = Builder::new((), inferdf_deduction::System::new());
 
 	for quad in quads {
 		let quad = builder.insert_quad(vocabulary, quad.clone()).unwrap();

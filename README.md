@@ -45,7 +45,7 @@ combined together.
 
 InfeRDF is split into separate building blocks:
   - `core`: Type and trait definitions for RDF modules, interpretations, etc.
-  - `storage`: File format to store RDF modules.
-  - `deduce`: Deduction rules and systems to define RDF semantics.
+  - `storage`: Binary file format to store RDF modules.
+  - `deduction`: Deduction rules and systems to define RDF semantics.
   - `rdfs`: Simple domain specific language to describe deduction rules.
   - `cli`: Command line interface.

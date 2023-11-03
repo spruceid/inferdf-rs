@@ -4,7 +4,7 @@ mod version;
 use std::io;
 
 use educe::Educe;
-use inferdf_core::{
+use inferdf::{
 	class::{self, GroupId},
 	Cause, Class, DivCeil, Signed,
 };
@@ -20,7 +20,7 @@ use rdf_types::{
 pub use tag::Tag;
 pub use version::Version;
 
-use inferdf_core::Id;
+use inferdf::Id;
 
 #[derive(Paged, Educe)]
 #[educe(Debug)]
@@ -274,14 +274,14 @@ pub struct GraphDescription {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Paged)]
 pub struct Triple(pub Id, pub Id, pub Id);
 
-impl From<Triple> for inferdf_core::Triple {
+impl From<Triple> for inferdf::Triple {
 	fn from(value: Triple) -> Self {
 		Self(value.0, value.1, value.2)
 	}
 }
 
-impl From<inferdf_core::Triple> for Triple {
-	fn from(value: inferdf_core::Triple) -> Self {
+impl From<inferdf::Triple> for Triple {
+	fn from(value: inferdf::Triple) -> Self {
 		Self(value.0, value.1, value.2)
 	}
 }
@@ -292,7 +292,7 @@ pub struct GraphFact {
 	pub cause: Cause,
 }
 
-impl From<GraphFact> for inferdf_core::GraphFact {
+impl From<GraphFact> for inferdf::GraphFact {
 	fn from(value: GraphFact) -> Self {
 		Self::new(value.triple.cast(), value.cause)
 	}

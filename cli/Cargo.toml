@@ -6,8 +6,8 @@ edition = "2021"
 default-run = "inferdf-cli"
 
 [dependencies]
-inferdf-core.workspace = true
-inferdf-inference.workspace = true
+inferdf.workspace = true
+inferdf-deduction.workspace = true
 inferdf-storage.workspace = true
 inferdf-rdfs.workspace = true
 clap.workspace = true

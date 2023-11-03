@@ -3,15 +3,14 @@ use locspan::Meta;
 use rdf_types::Vocabulary;
 use std::hash::Hash;
 
-use inferdf_core::{
+use crate::{
 	dataset,
 	interpretation::{self, InterpretationMut},
 	module::{sub_module::SubModuleError, SubModule},
+	semantics::{MaybeTrusted, QuadStatement, Semantics, TripleStatement},
 	uninterpreted, Cause, Entailment, Fact, Id, IteratorWith, Module, Quad, ReplaceId, Sign,
 	Signed,
 };
-
-use crate::semantics::{inference::rule::TripleStatement, MaybeTrusted, Semantics};
 
 mod class;
 mod context;
@@ -36,24 +35,6 @@ impl From<dataset::Contradiction> for Contradiction {
 impl From<interpretation::Contradiction> for Contradiction {
 	fn from(value: interpretation::Contradiction) -> Self {
 		Self::Interpretation(value)
-	}
-}
-
-pub enum QuadStatement {
-	Quad(Quad),
-	Eq(Id, Id, Option<Id>),
-}
-
-impl ReplaceId for QuadStatement {
-	fn replace_id(&mut self, a: Id, b: Id) {
-		match self {
-			Self::Quad(t) => t.replace_id(a, b),
-			Self::Eq(c, d, g) => {
-				c.replace_id(a, b);
-				d.replace_id(a, b);
-				g.replace_id(a, b);
-			}
-		}
 	}
 }
 
@@ -93,7 +74,7 @@ where
 	V::BlankId: Clone + Eq + Hash,
 	V::Literal: Clone + Eq + Hash,
 {
-	use inferdf_core::Interpretation;
+	use crate::Interpretation;
 	if term.is_blank() {
 		Ok(interpretation.insert_term(term))
 	} else {
@@ -235,7 +216,7 @@ impl<V: Vocabulary, D: Module<V>, S: Semantics<V>> Builder<V, D, S> {
 		V::BlankId: Copy + Eq + Hash,
 		V::Literal: Copy + Eq + Hash,
 	{
-		use inferdf_core::Interpretation;
+		use crate::Interpretation;
 		if term.is_blank() {
 			Ok(self.interpretation.insert_term(term))
 		} else {

@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, io};
 
-use inferdf_inference::semantics::inference;
 use iref::{Iri, IriBuf, IriRefBuf};
 use rdf_types::{
 	interpretation::{self, ResourceIndex},
@@ -47,7 +46,7 @@ pub fn system(
 	vocabulary: &IndexVocabulary,
 	interpretation: &interpretation::Indexed,
 	context: &Context,
-	system: &inference::System<ResourceIndex>,
+	system: &inferdf_deduction::System<ResourceIndex>,
 ) -> io::Result<()> {
 	html::render(out, vocabulary, interpretation, context, system)
 }

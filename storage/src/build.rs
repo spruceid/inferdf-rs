@@ -4,7 +4,7 @@ use std::{
 	io::{self, BufWriter, Seek, SeekFrom, Write},
 };
 
-use inferdf_core::{dataset, Classification, Dataset, Interpretation, IteratorWith, Module};
+use inferdf::{dataset, Classification, Dataset, Interpretation, IteratorWith, Module};
 use iref::Iri;
 use langtag::LanguageTag;
 use locspan::Meta;
@@ -109,7 +109,7 @@ where
 	let mut resource_entries = Vec::new();
 	let mut module_resources = module.interpretation().resources().map_err(Error::Module)?;
 	while let Some(r) = module_resources.next_with(vocabulary) {
-		use inferdf_core::interpretation::Resource;
+		use inferdf::interpretation::Resource;
 		let (id, r) = r.map_err(Error::Module)?;
 
 		let mut iris = Vec::new();
@@ -288,7 +288,7 @@ where
 	let mut resource_entries = Vec::new();
 	let mut module_resources = graph.resources();
 	while let Some(resource) = module_resources.next_with(vocabulary) {
-		use inferdf_core::dataset::graph::Resource;
+		use inferdf::dataset::graph::Resource;
 		let (id, resource) = resource.map_err(Error::Module)?;
 
 		let mut as_subject = Vec::new();

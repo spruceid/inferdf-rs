@@ -1,4 +1,4 @@
-use inferdf_core::{Id, Pattern, Signed};
+use inferdf::{Id, Pattern, Signed};
 use serde::{Deserialize, Serialize};
 
 mod conclusion;

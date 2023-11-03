@@ -1,10 +1,9 @@
 use std::{borrow::Cow, collections::HashMap, io};
 
-use inferdf_core::{pattern::IdOrVar, Sign};
-use inferdf_inference::semantics::inference::{
-	self,
+use inferdf::{pattern::IdOrVar, Sign};
+use inferdf_deduction::{
 	rule::{Formula, Hypothesis, StatementPattern, Variable},
-	Rule,
+	Rule, System,
 };
 use rdf_types::{
 	interpretation::{self, ResourceIndex, ReverseIriInterpretation},
@@ -19,7 +18,7 @@ pub fn render(
 	vocabulary: &IndexVocabulary,
 	interpretation: &interpretation::Indexed,
 	context: &Context,
-	system: &inference::System<ResourceIndex>,
+	system: &System<ResourceIndex>,
 ) -> io::Result<()> {
 	write!(out, "<ul class=\"rdfs-rules\">")?;
 	for rule in system {

@@ -1,11 +1,11 @@
 [package]
-name = "inferdf-inference"
+name = "inferdf-deduction"
 version = "0.1.0"
 authors = ["Timothée Haudebourg <author@haudebourg.net>"]
 edition = "2021"
 
 [dependencies]
-inferdf-core.workspace = true
+inferdf.workspace = true
 log.workspace = true
 rdf-types.workspace = true
 iref.workspace = true
@@ -16,5 +16,4 @@ hashbrown.workspace = true
 contextual.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-indexmap = "1.9.3"
 normal-form.workspace = true

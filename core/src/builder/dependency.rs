@@ -4,7 +4,7 @@ use derivative::Derivative;
 use hashbrown::HashMap;
 use rdf_types::Vocabulary;
 
-use inferdf_core::{
+use crate::{
 	dataset::{self, Dataset},
 	interpretation::composite,
 	Module, Sign, Triple,

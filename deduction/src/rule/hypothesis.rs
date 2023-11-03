@@ -2,7 +2,7 @@ use educe::Educe;
 use rdf_types::{InsertIntoVocabulary, MapLiteral, Vocabulary};
 use serde::{Deserialize, Serialize};
 
-use inferdf_core::{
+use inferdf::{
 	interpretation::{Interpret, InterpretationMut},
 	pattern::IdOrVar,
 	uninterpreted, Id, Pattern, Signed,

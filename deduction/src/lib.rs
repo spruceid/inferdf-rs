@@ -8,17 +8,14 @@ use locspan::Meta;
 use rdf_types::{IriVocabularyMut, Vocabulary};
 pub use rule::{Path, Rule};
 
-use inferdf_core::{
+use inferdf::{
 	module::sub_module::ResourceGenerator,
 	pattern::{self, Instantiate, Matching, PatternSubstitution},
+	semantics::{Context, ContextReservation, MaybeTrusted, Semantics, TripleStatement},
 	Cause, Entailment, Fact, Id, IteratorSearch, IteratorWith, Signed, Triple, TryCollectWith,
 };
 
-use crate::semantics::ContextReservation;
-
-use self::rule::{Formula, TripleStatement};
-
-use super::{Context, MaybeTrusted, Semantics};
+use rule::Formula;
 
 /// Induction rules.
 #[derive(Debug, Educe)]

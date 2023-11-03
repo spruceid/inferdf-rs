@@ -1,8 +1,5 @@
-use inferdf_core::{pattern::IdOrVar, Sign, Signed};
-use inferdf_inference::semantics::{
-	inference::{self, rule::Variable},
-	MaybeTrusted,
-};
+use inferdf::{pattern::IdOrVar, semantics::MaybeTrusted, Sign, Signed};
+use inferdf_deduction::{self as deduction, rule::Variable};
 use std::{collections::HashMap, hash::Hash};
 
 use iref::{InvalidIri, Iri, IriBuf, IriRef};
@@ -51,8 +48,8 @@ where
 	}
 }
 
-impl<V: Vocabulary, D: inferdf_core::Module<V>> BuildInterpretation<V>
-	for inferdf_inference::builder::BuilderInterpretation<V, D>
+impl<V: Vocabulary, D: inferdf::Module<V>> BuildInterpretation<V>
+	for inferdf::builder::BuilderInterpretation<V, D>
 where
 	V::Iri: Copy + Eq + Hash,
 	V::BlankId: Copy + Eq + Hash,
@@ -60,7 +57,7 @@ where
 {
 	type Error = D::Error;
 
-	type Resource = inferdf_core::Id;
+	type Resource = inferdf::Id;
 
 	fn interpret_owned_lexical_iri<E>(
 		&mut self,
@@ -70,7 +67,7 @@ where
 	where
 		V: IriVocabularyMut,
 	{
-		use inferdf_core::interpretation::InterpretationMut;
+		use inferdf::interpretation::InterpretationMut;
 		let v_iri = vocabulary.insert_owned(iri);
 		self.insert_term(vocabulary, rdf_types::Term::Id(rdf_types::Id::Iri(v_iri)))
 	}
@@ -280,7 +277,7 @@ impl Scope {
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for Document<M> {
-	type Target = inference::System<I::Resource>;
+	type Target = deduction::System<I::Resource>;
 
 	fn build(
 		&self,
@@ -301,7 +298,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for D
 			}
 		}
 
-		let mut system = inference::System::new();
+		let mut system = deduction::System::new();
 
 		for Meta(item, _) in &self.items {
 			match item {
@@ -324,7 +321,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for D
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for Group<M> {
-	type Target = Vec<inference::Rule<I::Resource>>;
+	type Target = Vec<deduction::Rule<I::Resource>>;
 
 	fn build(
 		&self,
@@ -361,7 +358,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for G
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for Rule<M> {
-	type Target = inference::Rule<I::Resource>;
+	type Target = deduction::Rule<I::Resource>;
 
 	fn build(
 		&self,
@@ -436,9 +433,9 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for R
 						e.extend_variables(outer_variables);
 					}
 					None => {
-						formula = inference::rule::Formula::Exists(inference::rule::Exists::new(
+						formula = deduction::rule::Formula::Exists(deduction::rule::Exists::new(
 							outer_variables,
-							inference::rule::Hypothesis::default(),
+							deduction::rule::Hypothesis::default(),
 							formula,
 						));
 					}
@@ -450,12 +447,12 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> Build<V, I, M> for R
 
 		formula.normalize();
 
-		Ok(inference::Rule::new(id, formula))
+		Ok(deduction::Rule::new(id, formula))
 	}
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M> for Formula<M> {
-	type Target = inference::rule::Formula<I::Resource>;
+	type Target = deduction::rule::Formula<I::Resource>;
 
 	fn build(
 		&self,
@@ -467,19 +464,19 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 		match self {
 			Self::ForAll(a) => a
 				.build(vocabulary, interpretation, context, scope)
-				.map(inference::rule::Formula::ForAll),
+				.map(deduction::rule::Formula::ForAll),
 			Self::Exists(e) => e
 				.build(vocabulary, interpretation, context, scope)
-				.map(inference::rule::Formula::Exists),
+				.map(deduction::rule::Formula::Exists),
 			Self::Conclusion(c) => c
 				.build(vocabulary, interpretation, context, scope)
-				.map(inference::rule::Formula::Conclusion),
+				.map(deduction::rule::Formula::Conclusion),
 		}
 	}
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M> for ForAll<M> {
-	type Target = inference::rule::ForAll<I::Resource>;
+	type Target = deduction::rule::ForAll<I::Resource>;
 
 	fn build(
 		&self,
@@ -503,7 +500,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 			.inner
 			.build(vocabulary, interpretation, context, scope)?;
 
-		Ok(inference::rule::ForAll {
+		Ok(deduction::rule::ForAll {
 			variables,
 			constraints,
 			inner: Box::new(inner),
@@ -512,7 +509,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M> for Exists<M> {
-	type Target = inference::rule::Exists<I::Resource>;
+	type Target = deduction::rule::Exists<I::Resource>;
 
 	fn build(
 		&self,
@@ -536,12 +533,12 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 			.inner
 			.build(vocabulary, interpretation, context, scope)?;
 
-		Ok(inference::rule::Exists::new(variables, hypothesis, inner))
+		Ok(deduction::rule::Exists::new(variables, hypothesis, inner))
 	}
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M> for Hypothesis<M> {
-	type Target = inference::rule::Hypothesis<I::Resource>;
+	type Target = deduction::rule::Hypothesis<I::Resource>;
 
 	fn build(
 		&self,
@@ -555,12 +552,12 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 			patterns.push(p.build(vocabulary, interpretation, context, scope)?)
 		}
 
-		Ok(inference::rule::Hypothesis::new(patterns))
+		Ok(deduction::rule::Hypothesis::new(patterns))
 	}
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M> for Conclusion<M> {
-	type Target = inference::rule::Conclusion<I::Resource>;
+	type Target = deduction::rule::Conclusion<I::Resource>;
 
 	fn build(
 		&self,
@@ -574,14 +571,14 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 			patterns.push(p.build(vocabulary, interpretation, context, scope)?)
 		}
 
-		Ok(inference::rule::Conclusion::new(Vec::new(), patterns))
+		Ok(deduction::rule::Conclusion::new(Vec::new(), patterns))
 	}
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 	for MaybeTrustedStatement<M>
 {
-	type Target = MaybeTrusted<Signed<inference::rule::StatementPattern<I::Resource>>>;
+	type Target = MaybeTrusted<Signed<deduction::rule::StatementPattern<I::Resource>>>;
 
 	fn build(
 		&self,
@@ -601,7 +598,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 	for SignedStatement<M>
 {
-	type Target = Signed<inference::rule::StatementPattern<I::Resource>>;
+	type Target = Signed<deduction::rule::StatementPattern<I::Resource>>;
 
 	fn build(
 		&self,
@@ -625,7 +622,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M> for Statement<M> {
-	type Target = inference::rule::StatementPattern<I::Resource>;
+	type Target = deduction::rule::StatementPattern<I::Resource>;
 
 	fn build(
 		&self,
@@ -635,11 +632,11 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 		scope: &Scope,
 	) -> BuildResult<Self::Target, M, I::Error> {
 		match self {
-			Self::Eq(a, b) => Ok(inference::rule::StatementPattern::Eq(
+			Self::Eq(a, b) => Ok(deduction::rule::StatementPattern::Eq(
 				a.build(vocabulary, interpretation, context, scope)?,
 				b.build(vocabulary, interpretation, context, scope)?,
 			)),
-			Self::Pattern(p) => Ok(inference::rule::StatementPattern::Triple(p.build(
+			Self::Pattern(p) => Ok(deduction::rule::StatementPattern::Triple(p.build(
 				vocabulary,
 				interpretation,
 				context,
@@ -652,7 +649,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 	for SignedPattern<M>
 {
-	type Target = Signed<inferdf_core::Pattern<I::Resource>>;
+	type Target = Signed<inferdf::Pattern<I::Resource>>;
 
 	fn build(
 		&self,
@@ -676,7 +673,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 }
 
 impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M> for Pattern<M> {
-	type Target = inferdf_core::Pattern<I::Resource>;
+	type Target = inferdf::Pattern<I::Resource>;
 
 	fn build(
 		&self,
@@ -685,7 +682,7 @@ impl<M: Clone, V: VocabularyMut, I: BuildInterpretation<V>> BuildScoped<V, I, M>
 		context: &mut Context,
 		scope: &Scope,
 	) -> BuildResult<Self::Target, M, I::Error> {
-		Ok(inferdf_core::Pattern::new(
+		Ok(inferdf::Pattern::new(
 			self.subject
 				.build(vocabulary, interpretation, context, scope)?,
 			self.predicate

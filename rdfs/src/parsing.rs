@@ -1,7 +1,7 @@
 use core::fmt;
 
 use decoded_char::{DecodedChar, DecodedChars};
-use inferdf_inference::semantics::Trust;
+use inferdf::semantics::Trust;
 use iref::{iri::InvalidIriRef, InvalidIri, IriBuf, IriRefBuf};
 use locspan::{Meta, Span};
 

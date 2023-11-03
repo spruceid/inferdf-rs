@@ -10,8 +10,8 @@ bin = ["clap", "stderrlog", "codespan-reporting"]
 
 [dependencies]
 rdf-types.workspace = true
-inferdf-core.workspace = true
-inferdf-inference.workspace = true
+inferdf.workspace = true
+inferdf-deduction.workspace = true
 iref.workspace = true
 locspan.workspace = true
 decoded-char = "0.1.1"
