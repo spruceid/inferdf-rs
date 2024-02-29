@@ -1,1 +1,0 @@
-# RDF Semantics Definition Language
