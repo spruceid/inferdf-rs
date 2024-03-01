@@ -21,6 +21,8 @@ pub use cause::*;
 mod dataset;
 pub use dataset::{FallibleSignedPatternMatchingDataset, SignedPatternMatchingDataset};
 
+pub mod expression;
+
 pub mod utils;
 
 pub type Fact<T> = Signed<Triple<T, T, T>>;
