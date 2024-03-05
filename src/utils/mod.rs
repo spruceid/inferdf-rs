@@ -74,3 +74,13 @@ impl<T, I: Iterator<Item = T>> Iterator for OnceOrMore<T, I> {
 		}
 	}
 }
+
+pub struct OptionIterator<I>(pub Option<I>);
+
+impl<I: Iterator> Iterator for OptionIterator<I> {
+	type Item = I::Item;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.as_mut().and_then(I::next)
+	}
+}

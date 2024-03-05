@@ -1,14 +1,12 @@
 use educe::Educe;
 
-use crate::{Entailment, MaybeTrusted, Signed};
-
-use super::TripleStatement;
+use crate::{Entailment, Signed, TripleStatement};
 
 #[derive(Educe)]
 #[educe(Default)]
-pub struct DeductionInstance<T>(Vec<SubDeductionInstance<T>>);
+pub struct DeductionInstance<'r, T>(pub(crate) Vec<SubDeductionInstance<'r, T>>);
 
-impl<T> DeductionInstance<T> {
+impl<'r, T> DeductionInstance<'r, T> {
 	pub fn is_empty(&self) -> bool {
 		self.0.is_empty()
 	}
@@ -31,34 +29,43 @@ impl<T> DeductionInstance<T> {
 	// }
 }
 
-impl<T> From<SubDeductionInstance<T>> for DeductionInstance<T> {
-	fn from(value: SubDeductionInstance<T>) -> Self {
+impl<'r, T> IntoIterator for DeductionInstance<'r, T> {
+	type IntoIter = std::vec::IntoIter<SubDeductionInstance<'r, T>>;
+	type Item = SubDeductionInstance<'r, T>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.into_iter()
+	}
+}
+
+impl<'r, T> From<SubDeductionInstance<'r, T>> for DeductionInstance<'r, T> {
+	fn from(value: SubDeductionInstance<'r, T>) -> Self {
 		Self(vec![value])
 	}
 }
 
 /// Deduced statements with a common cause.
-pub struct SubDeductionInstance<T> {
+pub struct SubDeductionInstance<'r, T> {
 	/// Rule and variable substitution triggering this deduction.
-	pub entailment: Entailment<T>,
+	pub entailment: Entailment<'r, T>,
 
 	/// Deduced statements.
-	pub statements: Vec<MaybeTrusted<Signed<TripleStatement<T>>>>,
+	pub statements: Vec<Signed<TripleStatement<T>>>,
 }
 
-impl<T> SubDeductionInstance<T> {
-	pub fn new(entailment: Entailment<T>) -> Self {
+impl<'r, T> SubDeductionInstance<'r, T> {
+	pub fn new(entailment: Entailment<'r, T>) -> Self {
 		Self {
 			entailment,
 			statements: Vec::new(),
 		}
 	}
 
-	pub fn insert(&mut self, statement: MaybeTrusted<Signed<TripleStatement<T>>>) {
+	pub fn insert(&mut self, statement: Signed<TripleStatement<T>>) {
 		self.statements.push(statement)
 	}
 
-	pub fn merge_with(&mut self, other: DeductionInstance<T>) {
+	pub fn merge_with(&mut self, other: DeductionInstance<'r, T>) {
 		for s in other.0 {
 			self.statements.extend(s.statements)
 		}

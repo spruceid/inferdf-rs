@@ -7,6 +7,7 @@ use xsd_types::{ParseXsd, XSD_BOOLEAN, XSD_STRING};
 use super::{regex, Error, Regex, Value};
 
 /// Comparable value.
+#[derive(Debug)]
 pub enum Comparable<'a, R> {
 	Any(&'a R),
 	Boolean(xsd_types::Boolean),
@@ -86,6 +87,16 @@ impl<'a, R> Comparable<'a, R> {
 			(Self::Regex(a), Self::Regex(b)) if a == b => (Ok(()), Self::Regex(b)),
 			(this, _) => (Err(Error::AmbiguousLiteral), this),
 		})
+	}
+
+	pub fn as_opaque(&self) -> Comparable<()> {
+		match self {
+			Self::Any(_) => Comparable::Any(&()),
+			Self::Boolean(b) => Comparable::Boolean(*b),
+			Self::Decimal(d) => Comparable::Decimal(Cow::Borrowed(d)),
+			Self::String(s) => Comparable::String(s),
+			Self::Regex(r) => Comparable::Regex(Cow::Borrowed(r)),
+		}
 	}
 }
 

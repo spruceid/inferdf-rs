@@ -1,361 +1,236 @@
+use std::hash::Hash;
+
+use rdf_types::{
+	generator,
+	interpretation::{LiteralInterpretationMut, ReverseTermInterpretation},
+	InterpretationMut, Quad, Term, VocabularyMut,
+};
 use serde::{Deserialize, Serialize};
 
 mod conclusion;
 mod hypothesis;
+mod r#macro;
 
 pub use conclusion::*;
 pub use hypothesis::*;
 
-use crate::{Pattern, Signed};
+use crate::{
+	expression,
+	pattern::{ApplyPartialSubstitution, PatternSubstitution, ResourceOrVar, TripleMatching},
+	system::{Deduction, SubDeduction},
+	utils::IteratorSearch,
+	Entailment, FallibleSignedPatternMatchingDataset, Signed, SignedPatternMatchingDataset,
+	Validation, ValidationError,
+};
 
 /// Deduction rule.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Rule<T> {
-	/// Rule identifier.
-	pub id: T,
+pub struct Rule<T = Term> {
+	pub variables: usize,
 
-	/// Formula.
-	pub formula: Formula<T>,
+	pub hypothesis: Hypothesis<T>,
+
+	pub conclusion: Conclusion<T>,
 }
 
 impl<T> Rule<T> {
-	/// Checks if this formula does not contain any universal quantifier.
-	pub fn is_existential(&self) -> bool {
-		self.formula.is_fully_existential()
-	}
-
-	pub fn as_existential_implication(&self) -> Option<ExistentialImplication<T>> {
-		self.formula
-			.existential_implication_conclusion()
-			.map(|conclusion| ExistentialImplication {
-				formula: &self.formula,
-				conclusion,
-			})
-	}
-}
-
-/// Formula variable description.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Variable {
-	/// Index of the variable.
-	pub index: usize,
-
-	/// Optional variable name.
-	pub name: Option<String>,
-}
-
-/// Universally bound formula.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct ForAll<T> {
-	pub variables: Vec<Variable>,
-	pub constraints: Hypothesis<T>,
-	pub inner: Box<Formula<T>>,
-}
-
-/// Existentially bound formula.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Exists<T> {
-	variables: Vec<Variable>,
-	hypothesis: Hypothesis<T>,
-	inner: Box<Formula<T>>,
-}
-
-impl<T> Exists<T> {
-	pub fn new(variables: Vec<Variable>, hypothesis: Hypothesis<T>, inner: Formula<T>) -> Self {
+	pub fn new(variables: usize, hypothesis: Hypothesis<T>, conclusion: Conclusion<T>) -> Self {
 		Self {
 			variables,
 			hypothesis,
-			inner: Box::new(inner),
-		}
-	}
-
-	pub fn variables(&self) -> &[Variable] {
-		&self.variables
-	}
-
-	pub fn hypothesis(&self) -> &Hypothesis<T> {
-		&self.hypothesis
-	}
-
-	pub fn inner(&self) -> &Formula<T> {
-		&self.inner
-	}
-
-	pub fn extend_variables(&mut self, v: impl IntoIterator<Item = Variable>) {
-		self.variables.extend(v);
-		self.variables.sort_unstable_by_key(|x| x.index)
-	}
-
-	fn hypothesis_pattern_from(&self, i: usize) -> Option<&Signed<Pattern<T>>> {
-		if i < self.hypothesis.patterns.len() {
-			self.hypothesis.patterns.get(i)
-		} else {
-			self.inner
-				.hypothesis_pattern_from(i - self.hypothesis.patterns.len())
+			conclusion,
 		}
 	}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum Formula<T> {
-	ForAll(ForAll<T>),
-	Exists(Exists<T>),
-	Conclusion(Conclusion<T>),
-}
-
-impl<T> Formula<T> {
-	pub fn is_fully_existential(&self) -> bool {
-		match self {
-			Self::ForAll(_) => false,
-			Self::Exists(e) => e.inner.is_fully_existential(),
-			Self::Conclusion(_) => true,
-		}
+impl<T: Clone + Eq + Hash> Rule<T> {
+	/// Deduces triples using this rule against the given dataset.
+	///
+	/// Returns all the `Deduction` instances representing each substitutions
+	/// satisfying the rule's hypotheses. Each deduction also include the
+	/// partially substituted conclusions.
+	pub fn try_deduce<D>(&self, dataset: &D) -> Result<Option<Deduction<T>>, D::Error>
+	where
+		D: FallibleSignedPatternMatchingDataset<Resource = T>,
+	{
+		self.try_deduce_from(dataset, PatternSubstitution::new(), None)
 	}
 
-	pub fn is_universal(&self) -> bool {
-		matches!(self, Self::ForAll(_))
-	}
+	/// Deduces triples using this rule against the given dataset from the
+	/// given `initial_substitution`.
+	///
+	/// Returns all the `Deduction` instances representing each substitutions
+	/// derived from `initial_substitution` satisfying the rule's hypotheses,
+	/// except `excluded_hypothesis` (if provided). Each deduction also include
+	/// the partially substituted conclusions.
+	pub fn try_deduce_from<D>(
+		&self,
+		dataset: &D,
+		initial_substitution: PatternSubstitution<T>,
+		excluded_hypothesis: Option<usize>,
+	) -> Result<Option<Deduction<T>>, D::Error>
+	where
+		D: FallibleSignedPatternMatchingDataset<Resource = T>,
+	{
+		let substitutions = self.try_find_substitutions(
+			dataset,
+			&self.hypothesis,
+			initial_substitution,
+			excluded_hypothesis,
+		)?;
 
-	pub fn is_existential(&self) -> bool {
-		matches!(self, Self::Exists(_))
-	}
+		let mut deduction = None;
 
-	pub fn as_existential_mut(&mut self) -> Option<&mut Exists<T>> {
-		match self {
-			Self::Exists(e) => Some(e),
-			_ => None,
-		}
-	}
+		for substitution in substitutions {
+			let mut d = SubDeduction::new(Entailment::new(self, substitution.to_vec()));
 
-	pub fn is_conclusion(&self) -> bool {
-		matches!(self, Self::Conclusion(_))
-	}
-
-	pub fn conclusion_mut(&mut self) -> &mut Conclusion<T> {
-		match self {
-			Self::ForAll(a) => a.inner.conclusion_mut(),
-			Self::Exists(e) => e.inner.conclusion_mut(),
-			Self::Conclusion(c) => c,
-		}
-	}
-
-	pub fn visit_variables(&self, mut f: impl FnMut(&Self, usize)) {
-		match self {
-			Self::ForAll(a) => {
-				a.constraints.visit_variables(|x| f(self, x));
-				a.inner.visit_variables(f)
+			for statement in &self.conclusion.statements {
+				d.insert(statement.apply_partial_substitution(&substitution))
 			}
-			Self::Exists(e) => {
-				e.hypothesis.visit_variables(|x| f(self, x));
-				e.inner.visit_variables(f)
+
+			deduction.get_or_insert_with(Deduction::default).push(d);
+		}
+
+		Ok(deduction)
+	}
+
+	/// Validates the given dataset against this rule.
+	///
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn validate_with<V, I, D>(
+		&self,
+		vocabulary: &mut V,
+		interpretation: &mut I,
+		dataset: &D,
+	) -> Result<Validation<T>, expression::Error>
+	where
+		V: VocabularyMut,
+		V::Iri: PartialEq,
+		I: InterpretationMut<V, Resource = T>
+			+ LiteralInterpretationMut<V::Literal>
+			+ ReverseTermInterpretation<Iri = V::Iri, BlankId = V::BlankId, Literal = V::Literal>,
+		D: SignedPatternMatchingDataset<Resource = T>,
+	{
+		self.try_validate_with(vocabulary, interpretation, dataset)
+			.map_err(Into::into)
+	}
+
+	/// Validates the given dataset against this rule.
+	///
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn try_validate_with<V, I, D>(
+		&self,
+		vocabulary: &mut V,
+		interpretation: &mut I,
+		dataset: &D,
+	) -> Result<Validation<T>, ValidationError<D::Error>>
+	where
+		V: VocabularyMut,
+		V::Iri: PartialEq,
+		I: InterpretationMut<V, Resource = T>
+			+ LiteralInterpretationMut<V::Literal>
+			+ ReverseTermInterpretation<Iri = V::Iri, BlankId = V::BlankId, Literal = V::Literal>,
+		D: FallibleSignedPatternMatchingDataset<Resource = T>,
+	{
+		if let Some(deduction) = self.try_deduce(dataset).map_err(ValidationError::Dataset)? {
+			if let Validation::Invalid(reason) =
+				deduction.try_validate(vocabulary, interpretation, dataset)?
+			{
+				return Ok(Validation::Invalid(reason));
 			}
-			Self::Conclusion(c) => c.visit_variables(|x| f(self, x)),
 		}
+
+		Ok(Validation::Ok)
 	}
 
-	pub fn visit_declared_variables(&self, mut f: impl FnMut(usize)) {
-		match self {
-			Self::ForAll(a) => {
-				for x in &a.variables {
-					f(x.index)
-				}
+	fn try_find_substitutions<D>(
+		&self,
+		dataset: &D,
+		hypothesis: &Hypothesis<T>,
+		initial_substitution: PatternSubstitution<T>,
+		excluded_pattern: Option<usize>,
+	) -> Result<Vec<PatternSubstitution<T>>, D::Error>
+	where
+		D: FallibleSignedPatternMatchingDataset<Resource = T>,
+	{
+		let substitutions = {
+			hypothesis
+				.patterns
+				.iter()
+				.enumerate()
+				.filter_map(|(i, pattern)| {
+					if excluded_pattern == Some(i) {
+						None
+					} else {
+						let canonical_pattern = pattern
+							.as_ref()
+							.map(|t| t.as_ref().map(ResourceOrVar::as_ref))
+							.cast();
 
-				a.inner.visit_declared_variables(f)
-			}
-			Self::Exists(e) => {
-				for x in &e.variables {
-					f(x.index)
-				}
-
-				e.inner.visit_declared_variables(f)
-			}
-			Self::Conclusion(_) => (),
-		}
-	}
-
-	pub fn normalize(&mut self) {
-		self.normalize_with(Some)
-	}
-
-	pub fn normalize_with(
-		&mut self,
-		mut f: impl FnMut(Signed<Pattern<T>>) -> Option<Signed<Pattern<T>>>,
-	) {
-		match self {
-			Self::ForAll(a) => {
-				a.inner
-					.normalize_with(normalize_to_hypothesis(&mut a.constraints));
-				a.constraints.patterns =
-					std::mem::take(&mut a.constraints.patterns)
-						.into_iter()
-						.filter_map(|p| {
-							if p.1 .0.is_id_or(|x| {
-								a.variables.binary_search_by_key(x, |y| y.index).is_ok()
-							}) || p.1 .1.is_id_or(|x| {
-								a.variables.binary_search_by_key(x, |y| y.index).is_ok()
-							}) || p.1 .2.is_id_or(|x| {
-								a.variables.binary_search_by_key(x, |y| y.index).is_ok()
-							}) {
-								Some(p)
-							} else {
-								f(p)
-							}
-						})
-						.collect();
-
-				if a.constraints.is_empty() {
-					panic!("unconstrained universal quantifier")
-				}
-			}
-			Self::Exists(e) => {
-				e.inner
-					.normalize_with(normalize_to_hypothesis(&mut e.hypothesis));
-				e.hypothesis.patterns =
-					std::mem::take(&mut e.hypothesis.patterns)
-						.into_iter()
-						.filter_map(|p| {
-							if p.1 .0.is_id_or(|x| {
-								e.variables.binary_search_by_key(x, |y| y.index).is_ok()
-							}) || p.1 .1.is_id_or(|x| {
-								e.variables.binary_search_by_key(x, |y| y.index).is_ok()
-							}) || p.1 .2.is_id_or(|x| {
-								e.variables.binary_search_by_key(x, |y| y.index).is_ok()
-							}) {
-								Some(p)
-							} else {
-								f(p)
-							}
-						})
-						.collect();
-			}
-			Self::Conclusion(_) => (),
-		}
-	}
-
-	fn existential_implication_conclusion(&self) -> Option<&Conclusion<T>> {
-		match self {
-			Self::ForAll(_) => None,
-			Self::Exists(e) => e.inner.existential_implication_conclusion(),
-			Self::Conclusion(c) => Some(c),
-		}
-	}
-
-	fn hypothesis_pattern_from(&self, i: usize) -> Option<&Signed<Pattern<T>>> {
-		match self {
-			Self::ForAll(_) => None,
-			Self::Exists(e) => e.hypothesis_pattern_from(i),
-			Self::Conclusion(_) => None,
-		}
-	}
-}
-
-fn normalize_to_hypothesis<T>(
-	h: &mut Hypothesis<T>,
-) -> impl '_ + FnMut(Signed<Pattern<T>>) -> Option<Signed<Pattern<T>>> {
-	|p| {
-		h.patterns.push(p);
-		None
-	}
-}
-
-pub struct ExistentialImplication<'a, T> {
-	formula: &'a Formula<T>,
-	conclusion: &'a Conclusion<T>,
-}
-
-impl<'a, T> ExistentialImplication<'a, T> {
-	pub fn hypothesis_patterns(&self) -> ExistentialImplicationHypothesisPatterns<'a, T> {
-		ExistentialImplicationHypothesisPatterns {
-			formula: self.formula,
-			current: None,
-		}
-	}
-
-	pub fn hypothesis_pattern(&self, i: usize) -> Option<&'a Signed<Pattern<T>>> {
-		self.formula.hypothesis_pattern_from(i)
-	}
-
-	pub fn conclusion(&self) -> &'a Conclusion<T> {
-		self.conclusion
-	}
-}
-
-pub struct ExistentialImplicationHypothesisPatterns<'a, T> {
-	formula: &'a Formula<T>,
-	current: Option<std::slice::Iter<'a, Signed<Pattern<T>>>>,
-}
-
-impl<'a, T> Iterator for ExistentialImplicationHypothesisPatterns<'a, T> {
-	type Item = &'a Signed<Pattern<T>>;
-
-	fn next(&mut self) -> Option<Self::Item> {
-		loop {
-			match &mut self.current {
-				Some(current) => match current.next() {
-					Some(p) => break Some(p),
-					None => self.current = None,
-				},
-				None => match self.formula {
-					Formula::Exists(e) => {
-						self.formula = &*e.inner;
-						self.current = Some(e.hypothesis.patterns.iter())
+						Some(dataset.try_signed_pattern_matching(canonical_pattern).map(
+							move |m: Result<Signed<Quad<&T>>, D::Error>| {
+								m.map(|Signed(_, m)| (pattern, m.into_triple().0))
+							},
+						))
 					}
-					_ => break None,
-				},
-			}
-		}
+				})
+				.search(initial_substitution, |substitution, (pattern, m)| {
+					let mut substitution = substitution.clone();
+					if pattern
+						.as_ref()
+						.into_value()
+						.triple_matching(&mut substitution, m)
+					{
+						Some(substitution)
+					} else {
+						None
+					}
+				})
+				.collect::<Result<Vec<_>, _>>()?
+		};
+
+		Ok(substitutions)
 	}
 }
 
-impl<T> Rule<T> {
-	pub fn new(id: T, formula: Formula<T>) -> Self {
-		Self { id, formula }
+impl Rule {
+	/// Validates the given dataset against this rule.
+	///
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn validate<D>(&self, dataset: &D) -> Result<Validation, expression::Error>
+	where
+		D: SignedPatternMatchingDataset<Resource = Term>,
+	{
+		self.try_validate(dataset).map_err(Into::into)
+	}
+
+	/// Validates the given dataset against this rule.
+	///
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn try_validate<D>(&self, dataset: &D) -> Result<Validation, ValidationError<D::Error>>
+	where
+		D: FallibleSignedPatternMatchingDataset<Resource = Term>,
+	{
+		let mut interpretation = rdf_types::interpretation::WithGenerator::new(
+			(),
+			generator::Blank::new_with_prefix("inferdf:validation".to_owned()),
+		);
+
+		self.try_validate_with(&mut (), &mut interpretation, dataset)
 	}
 }
 
-// impl<V: Vocabulary, T: InsertIntoVocabulary<V>> InsertIntoVocabulary<V> for Rule<T> {
-// 	type Inserted = Rule<T::Inserted>;
-
-// 	fn insert_into_vocabulary(self, vocabulary: &mut V) -> Self::Inserted {
-// 		Rule {
-// 			id: self.id.insert_into_vocabulary(vocabulary),
-// 			hypothesis: self.hypothesis.insert_into_vocabulary(vocabulary),
-// 			conclusion: self.conclusion.insert_into_vocabulary(vocabulary),
-// 		}
-// 	}
-// }
-
-// impl<L, M, T: MapLiteral<L, M>> MapLiteral<L, M> for Rule<T> {
-// 	type Output = Rule<T::Output>;
-
-// 	fn map_literal(self, mut f: impl FnMut(L) -> M) -> Self::Output {
-// 		Rule {
-// 			id: self.id.map_literal(&mut f),
-// 			hypothesis: self.hypothesis.map_literal(&mut f),
-// 			conclusion: self.conclusion.map_literal(f),
-// 		}
-// 	}
-// }
-
-// impl<V: Vocabulary> Interpret<V> for Rule<uninterpreted::Term<V>> {
-// 	type Interpreted = Rule;
-
-// 	fn interpret<'a, I: InterpretationMut<'a, V>>(
-// 		self,
-// 		vocabulary: &mut V,
-// 		interpretation: &mut I,
-// 	) -> Result<Self::Interpreted, I::Error> {
-// 		Ok(Rule {
-// 			id: self.id.interpret(vocabulary, interpretation)?,
-// 			hypothesis: self.hypothesis.interpret(vocabulary, interpretation)?,
-// 			conclusion: self.conclusion.interpret(vocabulary, interpretation)?,
-// 		})
-// 	}
-// }
-
+/// Path to an rule's pattern hypothesis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Path {
+	/// Rule index.
 	pub rule: usize,
+
+	/// Hypothesis index.
 	pub pattern: usize,
 }
 

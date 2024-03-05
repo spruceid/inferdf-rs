@@ -2,11 +2,11 @@ use std::borrow::Cow;
 
 use rdf_types::{
 	interpretation::{LiteralInterpretationMut, ReverseTermInterpretation},
-	Interpretation, LexicalLiteralTypeRef, LiteralType, Term, Vocabulary, VocabularyMut,
+	Interpretation, LiteralType, Term, Vocabulary, VocabularyMut,
 };
 use xsd_types::{XSD_BOOLEAN, XSD_DECIMAL, XSD_STRING};
 
-use super::{as_unexpected, Error, Expected, UnexpectedTerm};
+use super::{as_unexpected, Error, Expected, Instantiate, UnexpectedTerm};
 
 pub mod regex;
 pub use regex::Regex;
@@ -80,7 +80,7 @@ impl<'e, R: Clone> Value<'e, R> {
 		}
 	}
 
-	pub fn require_string<'a, V, I>(
+	pub fn require_any_literal<'a, V, I>(
 		&'a self,
 		vocabulary: &'a V,
 		interpretation: &'a I,
@@ -101,15 +101,9 @@ impl<'e, R: Clone> Value<'e, R> {
 
 				for l in interpretation.literals_of(resource) {
 					if let Some(literal) = vocabulary.literal(l) {
-						if let LexicalLiteralTypeRef::Any(iri) =
-							literal.type_.as_lexical_type_ref_with(vocabulary)
-						{
-							if iri == XSD_STRING {
-								if let Some(other) = value.replace(&literal.value) {
-									if other != *value.as_ref().unwrap() {
-										return Err(Error::AmbiguousLiteral);
-									}
-								}
+						if let Some(other) = value.replace(&literal.value) {
+							if other != *value.as_ref().unwrap() {
+								return Err(Error::AmbiguousLiteral);
 							}
 						}
 					}
@@ -118,33 +112,16 @@ impl<'e, R: Clone> Value<'e, R> {
 				match value {
 					Some(value) => Ok(value),
 					None => Err(Error::Unexpected(
-						Expected::Literal(XSD_STRING.to_owned()),
+						Expected::AnyLiteral,
 						as_unexpected(vocabulary, interpretation, resource),
 					)),
 				}
 			}
-			Self::Boolean(value) => Err(Error::Unexpected(
-				Expected::Literal(XSD_STRING.to_owned()),
-				UnexpectedTerm::Term(Term::Literal(rdf_types::Literal::new(
-					value.to_string(),
-					LiteralType::Any(XSD_BOOLEAN.to_owned()),
-				))),
-			)),
-			Self::Decimal(value) => Err(Error::Unexpected(
-				Expected::Literal(XSD_STRING.to_owned()),
-				UnexpectedTerm::Term(Term::Literal(rdf_types::Literal::new(
-					value.to_string(),
-					LiteralType::Any(XSD_DECIMAL.to_owned()),
-				))),
-			)),
+			Self::Boolean(xsd_types::Boolean(true)) => Ok("true"),
+			Self::Boolean(xsd_types::Boolean(false)) => Ok("false"),
+			Self::Decimal(value) => Ok(value.lexical_representation().as_str()),
 			Self::String(s) => Ok(s),
-			Self::Regex(value) => Err(Error::Unexpected(
-				Expected::Literal(XSD_STRING.to_owned()),
-				UnexpectedTerm::Term(Term::Literal(rdf_types::Literal::new(
-					value.as_str().to_owned(),
-					LiteralType::Any(regex::TYPE_IRI.to_owned()),
-				))),
-			)),
+			Self::Regex(value) => Ok(value.as_str()),
 		}
 	}
 
@@ -205,5 +182,18 @@ impl<'e, R: Clone> Value<'e, R> {
 			Self::String(s) => s.to_resource(vocabulary, interpretation),
 			Self::Regex(e) => e.to_resource(vocabulary, interpretation),
 		}
+	}
+}
+
+impl<'e, V, I, R> Instantiate<V, I> for Value<'e, R>
+where
+	R: Clone,
+	V: VocabularyMut,
+	I: Interpretation<Resource = R> + LiteralInterpretationMut<V::Literal>,
+{
+	type Instantiated = R;
+
+	fn instantiate(self, vocabulary: &mut V, interpretation: &mut I) -> Self::Instantiated {
+		self.into_resource(vocabulary, interpretation)
 	}
 }

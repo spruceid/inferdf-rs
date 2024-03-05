@@ -175,3 +175,13 @@ impl<I: Iterator> Iterator for Bipolar<I> {
 // 		self.negative.replace_id(a, b)
 // 	}
 // }
+
+pub struct PositiveIterator<I>(pub I);
+
+impl<I: Iterator> Iterator for PositiveIterator<I> {
+	type Item = Signed<I::Item>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(Signed::positive)
+	}
+}

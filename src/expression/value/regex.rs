@@ -1,7 +1,9 @@
 use core::fmt;
 use iref::Iri;
 use rdf_types::LexicalLiteralTypeRef;
+use serde::{Deserialize, Serialize};
 use static_iref::iri;
+use std::hash::Hash;
 
 pub use regex::Error;
 
@@ -41,6 +43,24 @@ impl PartialEq for Regex {
 
 impl Eq for Regex {}
 
+impl PartialOrd for Regex {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for Regex {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.as_str().cmp(other.as_str())
+	}
+}
+
+impl Hash for Regex {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.as_str().hash(state)
+	}
+}
+
 impl LiteralValue for Regex {
 	const TYPE: &'static Iri = TYPE_IRI;
 
@@ -60,5 +80,24 @@ impl LiteralValue for Regex {
 impl ToLiteralValue for Regex {
 	fn preferred_type(&self) -> &Iri {
 		Self::TYPE
+	}
+}
+
+impl Serialize for Regex {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: serde::Serializer,
+	{
+		self.as_str().serialize(serializer)
+	}
+}
+
+impl<'de> Deserialize<'de> for Regex {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: serde::Deserializer<'de>,
+	{
+		let pattern = String::deserialize(deserializer)?;
+		Self::new(&pattern).map_err(serde::de::Error::custom)
 	}
 }

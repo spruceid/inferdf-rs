@@ -2,29 +2,69 @@ use core::fmt;
 use std::borrow::Cow;
 
 use iref::IriBuf;
-use rdf_types::{interpretation::ReverseTermInterpretation, Interpretation, Term, Vocabulary};
+use rdf_types::{
+	interpretation::ReverseTermInterpretation, vocabulary::EmbedIntoVocabulary, Interpretation,
+	Term, Triple, Vocabulary,
+};
+use serde::{Deserialize, Serialize};
 use xsd_types::ParseXsdError;
 
-pub mod value;
-pub use value::Value;
+mod literal;
+pub use literal::*;
 
-use value::{Comparable, Regex};
+pub mod value;
+pub use value::{Regex, Value};
+
+use value::Comparable;
+
+use crate::{
+	pattern::{ApplyPartialSubstitution, ApplySubstitution, PatternSubstitution, ResourceOrVar},
+	Modal, Signed,
+};
 
 /// Expression that evaluate into a resource.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Expression<T, F = BuiltInFunction> {
 	Resource(T),
 	Literal(Literal),
 	Call(F, Vec<Self>),
 }
 
-impl<T, F> Expression<T, F> {
-	/// Evaluates the expression.
-	pub fn eval<V, I>(&self, vocabulary: &V, interpretation: &I) -> Result<Value<T>, Error>
+pub trait Eval<'e, V, I> {
+	type Output;
+
+	/// Evaluates.
+	fn eval(&'e self, vocabulary: &V, interpretation: &I) -> Result<Self::Output, Error>;
+
+	fn eval_and_instantiate(
+		&'e self,
+		vocabulary: &mut V,
+		interpretation: &mut I,
+	) -> Result<<Self::Output as Instantiate<V, I>>::Instantiated, Error>
 	where
-		T: Clone,
-		F: Function<V, I>,
-		I: Interpretation<Resource = T>,
+		Self::Output: Instantiate<V, I>,
 	{
+		let value = self.eval(vocabulary, interpretation)?;
+		Ok(value.instantiate(vocabulary, interpretation))
+	}
+}
+
+pub trait Instantiate<V, I> {
+	type Instantiated;
+
+	fn instantiate(self, vocabulary: &mut V, interpretation: &mut I) -> Self::Instantiated;
+}
+
+impl<'e, T: 'e, F, V, I> Eval<'e, V, I> for Expression<T, F>
+where
+	T: Clone,
+	F: Function<V, I>,
+	I: Interpretation<Resource = T>,
+{
+	type Output = Value<'e, T>;
+
+	/// Evaluates the expression.
+	fn eval(&'e self, vocabulary: &V, interpretation: &I) -> Result<Value<T>, Error> {
 		match self {
 			Self::Resource(r) => Ok(Value::Resource(Cow::Borrowed(r))),
 			Self::Literal(l) => Ok(l.eval()),
@@ -41,21 +81,132 @@ impl<T, F> Expression<T, F> {
 	}
 }
 
-/// Literal value.
-pub enum Literal {
-	/// Text string.
-	String(String),
+impl<'e, V, I, T: Eval<'e, V, I>> Eval<'e, V, I> for Triple<T> {
+	type Output = Triple<T::Output>;
 
-	/// Regular expression.
-	Regex(Regex),
+	fn eval(&'e self, vocabulary: &V, interpretation: &I) -> Result<Self::Output, Error> {
+		Ok(Triple(
+			self.0.eval(vocabulary, interpretation)?,
+			self.1.eval(vocabulary, interpretation)?,
+			self.2.eval(vocabulary, interpretation)?,
+		))
+	}
 }
 
-impl Literal {
-	/// Evaluates the literal expression.
-	pub fn eval<R: Clone>(&self) -> Value<R> {
+impl<V, I, T: Instantiate<V, I>> Instantiate<V, I> for Triple<T> {
+	type Instantiated = Triple<T::Instantiated>;
+
+	fn instantiate(self, vocabulary: &mut V, interpretation: &mut I) -> Self::Instantiated {
+		Triple(
+			self.0.instantiate(vocabulary, interpretation),
+			self.1.instantiate(vocabulary, interpretation),
+			self.2.instantiate(vocabulary, interpretation),
+		)
+	}
+}
+
+impl<'e, V, I, T: Eval<'e, V, I>> Eval<'e, V, I> for Modal<T> {
+	type Output = Modal<T::Output>;
+
+	fn eval(&'e self, vocabulary: &V, interpretation: &I) -> Result<Self::Output, Error> {
 		match self {
-			Self::String(s) => Value::String(Cow::Borrowed(s)),
-			Self::Regex(e) => Value::Regex(Cow::Borrowed(e)),
+			Self::Asserted(t) => t.eval(vocabulary, interpretation).map(Modal::Asserted),
+			Self::Required(t) => t.eval(vocabulary, interpretation).map(Modal::Required),
+		}
+	}
+}
+
+impl<V, I, T: Instantiate<V, I>> Instantiate<V, I> for Modal<T> {
+	type Instantiated = Modal<T::Instantiated>;
+
+	fn instantiate(self, vocabulary: &mut V, interpretation: &mut I) -> Self::Instantiated {
+		match self {
+			Self::Asserted(t) => Modal::Asserted(t.instantiate(vocabulary, interpretation)),
+			Self::Required(t) => Modal::Required(t.instantiate(vocabulary, interpretation)),
+		}
+	}
+}
+
+impl<'e, V, I, T: Eval<'e, V, I>> Eval<'e, V, I> for Signed<T> {
+	type Output = Signed<T::Output>;
+
+	fn eval(&'e self, vocabulary: &V, interpretation: &I) -> Result<Self::Output, Error> {
+		Ok(Signed(self.0, self.1.eval(vocabulary, interpretation)?))
+	}
+}
+
+impl<V, I, T: Instantiate<V, I>> Instantiate<V, I> for Signed<T> {
+	type Instantiated = Signed<T::Instantiated>;
+
+	fn instantiate(self, vocabulary: &mut V, interpretation: &mut I) -> Self::Instantiated {
+		Signed(self.0, self.1.instantiate(vocabulary, interpretation))
+	}
+}
+
+impl<V: Vocabulary, T: EmbedIntoVocabulary<V>, F> EmbedIntoVocabulary<V> for Expression<T, F> {
+	type Embedded = Expression<T::Embedded, F>;
+
+	fn embed_into_vocabulary(self, vocabulary: &mut V) -> Self::Embedded {
+		match self {
+			Self::Resource(t) => Expression::Resource(t.embed_into_vocabulary(vocabulary)),
+			Self::Literal(l) => Expression::Literal(l),
+			Self::Call(f, args) => Expression::Call(
+				f,
+				args.into_iter()
+					.map(|a| a.embed_into_vocabulary(vocabulary))
+					.collect(),
+			),
+		}
+	}
+}
+
+impl<R, T: ApplyPartialSubstitution<R>, F: Clone> ApplyPartialSubstitution<R> for Expression<T, F> {
+	fn apply_partial_substitution(&self, substitution: &PatternSubstitution<R>) -> Self {
+		match self {
+			Self::Resource(r) => Expression::Resource(r.apply_partial_substitution(substitution)),
+			Self::Literal(l) => Expression::Literal(l.clone()),
+			Self::Call(f, args) => Expression::Call(
+				f.clone(),
+				args.iter()
+					.map(|a| a.apply_partial_substitution(substitution))
+					.collect(),
+			),
+		}
+	}
+}
+
+impl<R, T: ApplySubstitution<R>, F: Clone> ApplySubstitution<R> for Expression<T, F> {
+	type Output = Expression<T::Output, F>;
+
+	fn apply_substitution(&self, substitution: &PatternSubstitution<R>) -> Option<Self::Output> {
+		match self {
+			Self::Resource(r) => Some(Expression::Resource(r.apply_substitution(substitution)?)),
+			Self::Literal(l) => Some(Expression::Literal(l.clone())),
+			Self::Call(f, args) => Some(Expression::Call(
+				f.clone(),
+				args.iter()
+					.map(|a| a.apply_substitution(substitution))
+					.collect::<Option<Vec<_>>>()?,
+			)),
+		}
+	}
+}
+
+impl<T, F> Expression<ResourceOrVar<T>, F> {
+	pub fn visit_variables(&self, mut f: impl FnMut(usize)) {
+		self.visit_variables_ref_mut(&mut f)
+	}
+
+	fn visit_variables_ref_mut(&self, f: &mut impl FnMut(usize)) {
+		match self {
+			Self::Resource(ResourceOrVar::Var(x)) => f(*x),
+			Self::Resource(ResourceOrVar::Resource(_)) => (),
+			Self::Literal(_) => (),
+			Self::Call(_, args) => {
+				for a in args {
+					a.visit_variables_ref_mut(&mut *f)
+				}
+			}
 		}
 	}
 }
@@ -74,6 +225,7 @@ pub trait Function<V, I: Interpretation> {
 }
 
 /// Built-in functions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum BuiltInFunction {
 	/// Boolean or.
 	Or,
@@ -169,7 +321,7 @@ where
 			Self::Matches => match args {
 				[regex, haystack] => {
 					let regex = regex.require_regex(vocabulary, interpretation)?;
-					let haystack = haystack.require_string(vocabulary, interpretation)?;
+					let haystack = haystack.require_any_literal(vocabulary, interpretation)?;
 					Ok(Value::Boolean(xsd_types::Boolean(regex.is_match(haystack))))
 				}
 				_ => Err(Error::InvalidArgumentCount {
@@ -181,6 +333,7 @@ where
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ComparisonOperator {
 	/// Equality.
 	Eq,
@@ -203,6 +356,7 @@ pub enum ComparisonOperator {
 
 impl ComparisonOperator {
 	fn eval<R: PartialEq>(&self, a: &Comparable<R>, b: &Comparable<R>) -> bool {
+		eprintln!("eval op: {:?} {self:?} {:?}", a.as_opaque(), b.as_opaque());
 		match self {
 			Self::Eq => a == b,
 			Self::Ne => a != b,
@@ -216,12 +370,14 @@ impl ComparisonOperator {
 
 #[derive(Debug)]
 pub enum Expected {
+	AnyLiteral,
 	Literal(IriBuf),
 }
 
 impl fmt::Display for Expected {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
+			Self::AnyLiteral => write!(f, "literal"),
 			Self::Literal(type_) => write!(f, "literal of type <{type_}>"),
 		}
 	}
