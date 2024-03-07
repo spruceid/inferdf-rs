@@ -13,9 +13,13 @@ paged = ["dep:paged"]
 [dependencies]
 log = "0.4.17"
 iref = { version = "3.1.2", features = ["hashbrown", "serde"] }
-rdf-types = { version = "0.19", features = ["serde"] }
+static-iref = "3.0.0"
+rdf-types = { version = "0.19.3", features = ["serde"] }
+xsd-types = { version = "0.9.1", features = ["serde"] }
 educe = "0.4.22"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.40"
 im = "15.1.0"
+regex = "1.10.3"
+replace_with = "0.1.7"
 paged = { version = "0.1.0", features = ["derive"], optional = true }

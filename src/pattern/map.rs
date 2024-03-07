@@ -1,6 +1,6 @@
 use educe::Educe;
 use rdf_types::{
-	pattern::{map::Values, TriplePatternMap},
+	pattern::{triple::map::Values, TriplePatternMap},
 	Triple,
 };
 use std::hash::Hash;

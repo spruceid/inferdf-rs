@@ -6,6 +6,7 @@ use paged::Paged;
 
 use crate::pattern::{ApplyPartialSubstitution, ApplySubstitution};
 
+/// Signed (positive or negative) value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "paged", derive(Paged), paged(
 	context(C),
@@ -119,6 +120,7 @@ impl<T, U: ApplyPartialSubstitution<T>> ApplyPartialSubstitution<T> for Signed<U
 	}
 }
 
+/// Sign (positive or negative).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "paged", derive(Paged))]
 pub enum Sign {
@@ -136,6 +138,7 @@ impl Sign {
 	}
 }
 
+/// One value for each sign (positive and negative).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bipolar<T> {
 	pub positive: T,
@@ -175,3 +178,14 @@ impl<I: Iterator> Iterator for Bipolar<I> {
 // 		self.negative.replace_id(a, b)
 // 	}
 // }
+
+/// Wrapping iterator mapping `T` to `Signed<T>` with positive sign.
+pub struct PositiveIterator<I>(pub I);
+
+impl<I: Iterator> Iterator for PositiveIterator<I> {
+	type Item = Signed<I::Item>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next().map(Signed::positive)
+	}
+}

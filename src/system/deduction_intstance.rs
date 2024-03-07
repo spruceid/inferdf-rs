@@ -1,14 +1,13 @@
 use educe::Educe;
+use rdf_types::Term;
 
-use crate::{Entailment, MaybeTrusted, Signed};
-
-use super::TripleStatement;
+use crate::{Entailment, Signed, TripleStatement};
 
 #[derive(Educe)]
 #[educe(Default)]
-pub struct DeductionInstance<T>(Vec<SubDeductionInstance<T>>);
+pub struct DeductionsInstance<'r, T = Term>(pub(crate) Vec<DeductionInstance<'r, T>>);
 
-impl<T> DeductionInstance<T> {
+impl<'r, T> DeductionsInstance<'r, T> {
 	pub fn is_empty(&self) -> bool {
 		self.0.is_empty()
 	}
@@ -16,49 +15,45 @@ impl<T> DeductionInstance<T> {
 	pub fn merge_with(&mut self, other: Self) {
 		self.0.extend(other.0)
 	}
-
-	// pub fn collect(
-	// 	self,
-	// 	mut entailment_index: impl FnMut(Entailment<T>) -> u32,
-	// 	mut new_triple: impl FnMut(Meta<MaybeTrusted<Signed<TripleStatement<T>>>, Cause>),
-	// ) {
-	// 	for s in self.0 {
-	// 		let e = entailment_index(s.entailment);
-	// 		for statement in s.statements {
-	// 			new_triple(Meta(statement, Cause::Entailed(e)))
-	// 		}
-	// 	}
-	// }
 }
 
-impl<T> From<SubDeductionInstance<T>> for DeductionInstance<T> {
-	fn from(value: SubDeductionInstance<T>) -> Self {
+impl<'r, T> IntoIterator for DeductionsInstance<'r, T> {
+	type IntoIter = std::vec::IntoIter<DeductionInstance<'r, T>>;
+	type Item = DeductionInstance<'r, T>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.into_iter()
+	}
+}
+
+impl<'r, T> From<DeductionInstance<'r, T>> for DeductionsInstance<'r, T> {
+	fn from(value: DeductionInstance<'r, T>) -> Self {
 		Self(vec![value])
 	}
 }
 
 /// Deduced statements with a common cause.
-pub struct SubDeductionInstance<T> {
+pub struct DeductionInstance<'r, T> {
 	/// Rule and variable substitution triggering this deduction.
-	pub entailment: Entailment<T>,
+	pub entailment: Entailment<'r, T>,
 
 	/// Deduced statements.
-	pub statements: Vec<MaybeTrusted<Signed<TripleStatement<T>>>>,
+	pub statements: Vec<Signed<TripleStatement<T>>>,
 }
 
-impl<T> SubDeductionInstance<T> {
-	pub fn new(entailment: Entailment<T>) -> Self {
+impl<'r, T> DeductionInstance<'r, T> {
+	pub fn new(entailment: Entailment<'r, T>) -> Self {
 		Self {
 			entailment,
 			statements: Vec::new(),
 		}
 	}
 
-	pub fn insert(&mut self, statement: MaybeTrusted<Signed<TripleStatement<T>>>) {
+	pub fn insert(&mut self, statement: Signed<TripleStatement<T>>) {
 		self.statements.push(statement)
 	}
 
-	pub fn merge_with(&mut self, other: DeductionInstance<T>) {
+	pub fn merge_with(&mut self, other: DeductionsInstance<'r, T>) {
 		for s in other.0 {
 			self.statements.extend(s.statements)
 		}

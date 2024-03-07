@@ -1,10 +1,16 @@
 #[cfg(feature = "paged")]
 use paged::Paged;
 
+use crate::Rule;
+
+/// Cause of a deduction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "paged", derive(Paged))]
 pub enum Cause {
+	/// The deducted fact is stated.
 	Stated(u32),
+
+	/// The deducted fact is entailed.
 	Entailed(u32),
 }
 
@@ -19,16 +25,16 @@ impl Cause {
 
 /// Triple entailment.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Entailment<T> {
-	/// Rule identifier.
-	pub rule: T,
+pub struct Entailment<'r, T> {
+	/// Rule reference.
+	pub rule: &'r Rule<T>,
 
 	/// Rule variables substitution.
 	pub substitution: Vec<Option<T>>,
 }
 
-impl<T> Entailment<T> {
-	pub fn new(rule: T, substitution: Vec<Option<T>>) -> Self {
+impl<'r, T> Entailment<'r, T> {
+	pub fn new(rule: &'r Rule<T>, substitution: Vec<Option<T>>) -> Self {
 		Self { rule, substitution }
 	}
 }
