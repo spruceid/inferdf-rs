@@ -1,3 +1,4 @@
+//! Deduction rules.
 use std::hash::Hash;
 
 use rdf_types::{
@@ -9,7 +10,6 @@ use serde::{Deserialize, Serialize};
 
 mod conclusion;
 mod hypothesis;
-mod r#macro;
 
 pub use conclusion::*;
 pub use hypothesis::*;
@@ -17,7 +17,7 @@ pub use hypothesis::*;
 use crate::{
 	expression,
 	pattern::{ApplyPartialSubstitution, PatternSubstitution, ResourceOrVar, TripleMatching},
-	system::{Deduction, SubDeduction},
+	system::{Deduction, Deductions},
 	utils::IteratorSearch,
 	Entailment, FallibleSignedPatternMatchingDataset, Signed, SignedPatternMatchingDataset,
 	Validation, ValidationError,
@@ -49,7 +49,20 @@ impl<T: Clone + Eq + Hash> Rule<T> {
 	/// Returns all the `Deduction` instances representing each substitutions
 	/// satisfying the rule's hypotheses. Each deduction also include the
 	/// partially substituted conclusions.
-	pub fn try_deduce<D>(&self, dataset: &D) -> Result<Option<Deduction<T>>, D::Error>
+	pub fn deduce<D>(&self, dataset: &D) -> Deductions<T>
+	where
+		D: SignedPatternMatchingDataset<Resource = T>,
+	{
+		self.try_deduce_from(dataset, PatternSubstitution::new(), None)
+			.unwrap()
+	}
+
+	/// Deduces triples using this rule against the given dataset.
+	///
+	/// Returns all the `Deduction` instances representing each substitutions
+	/// satisfying the rule's hypotheses. Each deduction also include the
+	/// partially substituted conclusions.
+	pub fn try_deduce<D>(&self, dataset: &D) -> Result<Deductions<T>, D::Error>
 	where
 		D: FallibleSignedPatternMatchingDataset<Resource = T>,
 	{
@@ -68,7 +81,7 @@ impl<T: Clone + Eq + Hash> Rule<T> {
 		dataset: &D,
 		initial_substitution: PatternSubstitution<T>,
 		excluded_hypothesis: Option<usize>,
-	) -> Result<Option<Deduction<T>>, D::Error>
+	) -> Result<Deductions<T>, D::Error>
 	where
 		D: FallibleSignedPatternMatchingDataset<Resource = T>,
 	{
@@ -79,16 +92,16 @@ impl<T: Clone + Eq + Hash> Rule<T> {
 			excluded_hypothesis,
 		)?;
 
-		let mut deduction = None;
+		let mut deduction = Deductions::default();
 
 		for substitution in substitutions {
-			let mut d = SubDeduction::new(Entailment::new(self, substitution.to_vec()));
+			let mut d = Deduction::new(Entailment::new(self, substitution.to_vec()));
 
 			for statement in &self.conclusion.statements {
 				d.insert(statement.apply_partial_substitution(&substitution))
 			}
 
-			deduction.get_or_insert_with(Deduction::default).push(d);
+			deduction.push(d);
 		}
 
 		Ok(deduction)
@@ -134,12 +147,11 @@ impl<T: Clone + Eq + Hash> Rule<T> {
 			+ ReverseTermInterpretation<Iri = V::Iri, BlankId = V::BlankId, Literal = V::Literal>,
 		D: FallibleSignedPatternMatchingDataset<Resource = T>,
 	{
-		if let Some(deduction) = self.try_deduce(dataset).map_err(ValidationError::Dataset)? {
-			if let Validation::Invalid(reason) =
-				deduction.try_validate(vocabulary, interpretation, dataset)?
-			{
-				return Ok(Validation::Invalid(reason));
-			}
+		let deductions = self.try_deduce(dataset).map_err(ValidationError::Dataset)?;
+		if let Validation::Invalid(reason) =
+			deductions.try_validate(vocabulary, interpretation, dataset)?
+		{
+			return Ok(Validation::Invalid(reason));
 		}
 
 		Ok(Validation::Ok)

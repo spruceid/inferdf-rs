@@ -1,14 +1,117 @@
+//! InfeRDF is an RDF deduction library providing tools to infer implicit
+//! statements and/or validate facts derived from an RDF dataset.
+//!
+//! # Usage
+//!
+//! InfeRDF works by defining deduction rules that can match against any given
+//! RDF dataset. Each deduction [`Rule`] is an implication of the form
+//! `hypotheses => conclusions` where each hypothesis is a non-linear
+//! [RDF triple pattern][triple-pattern], and each conclusion a
+//! [`TripleStatement`].
+//! You can use the [`rule!`][rule-macro] macro to build rules more easily.
+//!
+//! [triple-pattern]: crate::Pattern
+//! [rule-macro]: crate::rule!
+//!
+//! ## Example
+//!
+//! ```
+//! // Citizenship implies humanship.
+//! let rule = inferdf::rule! {
+//!   for ?person, ?country {
+//!     ?person <"https://example.org/#citizenOf"> ?country .
+//!   } => {
+//!     ?person <"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"> <"https://example.org/#Human"> .
+//!   }
+//! };
+//! ```
+//!
+//! Rules can be merged together into deduction [`System`]s.
+//! Once a rule or system is defined, you can then use it to deduce new triples
+//! from an input dataset (in the example above, deduce humanship from
+//! citizenship) or validate the input dataset (check that citizenship implies
+//! citizenship).
+//!
+//! ## Deduction
+//!
+//! Use the [`Rule::deduce`] or [`System::deduce`] methods to infer new triples
+//! from a given dataset.
+//!
+//! ```
+//! use rdf_types::{dataset::BTreeGraph, grdf_triples};
+//! # let rule = inferdf::rule! {
+//! #   for ?person, ?country {
+//! #     ?person <"https://example.org/#citizenOf"> ?country .
+//! #   } => {
+//! #     ?person <"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"> <"https://example.org/#Human"> .
+//! #   }
+//! # };
+//!
+//! // Build an RDF dataset (a single graph here).
+//! let mut input: BTreeGraph = grdf_triples! [
+//!   _:"FrançoisDupont" <"https://example.org/#citizenOf"> _:"France" .
+//! ].into_iter().collect();
+//!
+//! // Deduce statements from the input dataset.
+//! let deductions = rule.deduce(&input);
+//!
+//! // Evaluates the deductions. This may add new terms into the graph, so
+//! // we need to provide a blank id generator to generate those terms.
+//! let evaluated_deductions = deductions.eval(rdf_types::generator::Blank::new()).expect("evaluation failed");
+//!
+//! for deduction in evaluated_deductions {
+//!   use inferdf::{Signed, Sign, TripleStatement};
+//!   for statement in deduction.statements {
+//!     if let Signed(Sign::Positive, TripleStatement::Triple(triple)) = statement {
+//!       input.insert(triple); // insert the deduced triple into the graph.
+//!     }
+//!   }
+//! }
+//!
+//! let mut expected: BTreeGraph = grdf_triples! [
+//!   _:"FrançoisDupont" <"https://example.org/#citizenOf"> _:"France" .
+//!   _:"FrançoisDupont" <"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"> <"https://example.org/#Human"> .
+//! ].into_iter().collect();
+//!
+//! assert_eq!(input, expected)
+//! ```
+//!
+//! ## Validation
+//!
+//! Use the [`Rule::validate`]/[`System::validate`] to validate a given
+//! dataset against a (set of) deduction rule(s). This will return a
+//! [`Validation`] status value, either `Ok` or `Invalid`. The later also
+//! provides a [`Reason`] why the validation failed.
+//!
+//! ```
+//! use rdf_types::{dataset::BTreeGraph, grdf_triples};
+//! # let rule = inferdf::rule! {
+//! #   for ?person, ?country {
+//! #     ?person <"https://example.org/#citizenOf"> ?country .
+//! #   } => {
+//! #     ?person <"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"> <"https://example.org/#Human"> .
+//! #   }
+//! # };
+//!
+//! // Build an RDF dataset (a single graph here).
+//! let input: BTreeGraph = grdf_triples! [
+//!   _:"FrançoisDupont" <"https://example.org/#citizenOf"> _:"France" .
+//!   _:"FrançoisDupont" <"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"> <"https://example.org/#Human"> .
+//! ].into_iter().collect();
+//!
+//! assert!(rule.validate(&input).unwrap().is_valid())
+//! ```
 use rdf_types::{Term, Triple};
 use std::hash::Hash;
 
+#[doc(hidden)]
 pub use rdf_types;
+
+#[doc(hidden)]
 pub use static_iref;
 
 mod sign;
 pub use sign::*;
-
-mod mode;
-pub use mode::*;
 
 mod statement;
 pub use statement::*;
@@ -31,20 +134,14 @@ pub use dataset::{FallibleSignedPatternMatchingDataset, SignedPatternMatchingDat
 pub mod expression;
 pub use expression::Expression;
 
+mod r#macros;
 pub mod utils;
 
+/// Signed triple.
 pub type Fact<T> = Signed<Triple<T, T, T>>;
 
+/// Signed triple reference.
 pub type FactRef<'a, T> = Signed<Triple<&'a T, &'a T, &'a T>>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error<I, D> {
-	#[error("interpretation error: {0}")]
-	Interpretation(I),
-
-	#[error("dataset error: {0}")]
-	Dataset(D),
-}
 
 pub enum ValidationError<D> {
 	Dataset(D),

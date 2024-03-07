@@ -6,10 +6,16 @@ use crate::{
 	pattern::{ApplyPartialSubstitution, ApplySubstitution, PatternSubstitution},
 };
 
+/// Triple statement found in a deduction rule conclusion.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum TripleStatement<T> {
+	/// States that the given triple is asserted.
 	Triple(Triple<T, T, T>),
+
+	/// States that the given two resources are equals.
 	Eq(T, T),
+
+	/// States that the given value is the XSD boolean value `true`.
 	True(T),
 }
 
@@ -108,7 +114,7 @@ impl<V: Vocabulary, T: EmbedIntoVocabulary<V>> EmbedIntoVocabulary<V> for Triple
 	}
 }
 
-/// RDF quad statement.
+/// Quad statement.
 pub enum QuadStatement<T> {
 	/// States that the given quad is asserted.
 	Quad(Quad<T, T, T, T>),

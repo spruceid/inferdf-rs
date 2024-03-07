@@ -3,10 +3,14 @@ use paged::Paged;
 
 use crate::Rule;
 
+/// Cause of a deduction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "paged", derive(Paged))]
 pub enum Cause {
+	/// The deducted fact is stated.
 	Stated(u32),
+
+	/// The deducted fact is entailed.
 	Entailed(u32),
 }
 

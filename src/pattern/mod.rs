@@ -1,3 +1,4 @@
+//! Triple pattern, matching and substitution.
 use im::hashmap::Entry;
 use rdf_types::{Term, Triple};
 
@@ -6,10 +7,10 @@ pub use rdf_types::pattern::CanonicalTriplePattern as Canonical;
 pub mod map;
 pub use map::BipolarMap;
 
-/// Resource or variable.
+/// Resource or variable, used in a [`Pattern`].
 pub type ResourceOrVar<T = Term> = rdf_types::pattern::ResourceOrVar<T, usize>;
 
-/// Pattern.
+/// Triple pattern.
 pub type Pattern<T> = Triple<ResourceOrVar<T>>;
 
 pub trait TripleMatching<T> {

@@ -4,6 +4,9 @@ macro_rules! unexpected_token {
 	() => {};
 }
 
+/// Creates a new triple pattern.
+/// 
+/// The resulting value has type [`Pattern`](crate::Pattern).
 #[macro_export]
 macro_rules! pattern {
 	// Parse a pattern.
@@ -70,6 +73,9 @@ macro_rules! pattern {
 	};
 }
 
+/// Creates a list of patterns.
+/// 
+/// The resulting value has type [`Vec<Pattern>`](crate::Pattern).
 #[macro_export]
 macro_rules! patterns {
 	// Tokenize patterns.
@@ -218,6 +224,7 @@ macro_rules! rule {
 	};
 }
 
+/// Creates a list of statement expressions.
 #[macro_export]
 macro_rules! expressions {
 	// Parse a list of expressions.
@@ -269,6 +276,7 @@ macro_rules! expressions {
 	}
 }
 
+/// Creates a statement expression.
 #[macro_export]
 macro_rules! expression {
 	// Main rules.
@@ -387,6 +395,7 @@ macro_rules! expression {
 	};
 }
 
+/// Creates a triple statement.
 #[macro_export]
 macro_rules! statement {
 	// Parse a list of expressions.
@@ -461,7 +470,7 @@ macro_rules! statement {
 	};
 }
 
-/// Creates a list of statements.
+/// Creates a list of triple statements.
 #[macro_export]
 macro_rules! statements {
 	// Tokenize statements.

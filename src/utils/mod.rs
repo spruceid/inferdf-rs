@@ -1,3 +1,4 @@
+//! Utility types and traits.
 mod search;
 pub use search::*;
 

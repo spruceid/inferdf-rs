@@ -1,3 +1,4 @@
+//! Triple statement expressions.
 use core::fmt;
 use std::borrow::Cow;
 
@@ -19,7 +20,7 @@ use value::Comparable;
 
 use crate::{
 	pattern::{ApplyPartialSubstitution, ApplySubstitution, PatternSubstitution, ResourceOrVar},
-	Modal, Signed,
+	Signed,
 };
 
 /// Expression that evaluate into a resource.
@@ -102,28 +103,6 @@ impl<V, I, T: Instantiate<V, I>> Instantiate<V, I> for Triple<T> {
 			self.1.instantiate(vocabulary, interpretation),
 			self.2.instantiate(vocabulary, interpretation),
 		)
-	}
-}
-
-impl<'e, V, I, T: Eval<'e, V, I>> Eval<'e, V, I> for Modal<T> {
-	type Output = Modal<T::Output>;
-
-	fn eval(&'e self, vocabulary: &V, interpretation: &I) -> Result<Self::Output, Error> {
-		match self {
-			Self::Asserted(t) => t.eval(vocabulary, interpretation).map(Modal::Asserted),
-			Self::Required(t) => t.eval(vocabulary, interpretation).map(Modal::Required),
-		}
-	}
-}
-
-impl<V, I, T: Instantiate<V, I>> Instantiate<V, I> for Modal<T> {
-	type Instantiated = Modal<T::Instantiated>;
-
-	fn instantiate(self, vocabulary: &mut V, interpretation: &mut I) -> Self::Instantiated {
-		match self {
-			Self::Asserted(t) => Modal::Asserted(t.instantiate(vocabulary, interpretation)),
-			Self::Required(t) => Modal::Required(t.instantiate(vocabulary, interpretation)),
-		}
 	}
 }
 

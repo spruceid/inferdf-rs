@@ -2,8 +2,8 @@ use std::hash::Hash;
 
 use educe::Educe;
 use rdf_types::{
-	interpretation::{LiteralInterpretationMut, ReverseTermInterpretation},
-	InterpretationMut, VocabularyMut,
+	interpretation::{LiteralInterpretationMut, ReverseTermInterpretation, WithGenerator},
+	Generator, InterpretationMut, Term, VocabularyMut,
 };
 use xsd_types::{ParseXsd, XSD_BOOLEAN};
 
@@ -15,18 +15,18 @@ use crate::{
 	SignedPatternMatchingDataset, TripleStatement, Validation, ValidationError,
 };
 
-use super::{DeductionInstance, SubDeductionInstance};
+use super::{DeductionInstance, DeductionsInstance};
 
 #[derive(Educe)]
 #[educe(Default)]
-pub struct Deduction<'r, T>(Vec<SubDeduction<'r, T>>);
+pub struct Deductions<'r, T = Term>(Vec<Deduction<'r, T>>);
 
-impl<'r, T> Deduction<'r, T> {
+impl<'r, T> Deductions<'r, T> {
 	pub fn is_empty(&self) -> bool {
 		self.0.is_empty()
 	}
 
-	pub fn push(&mut self, s: SubDeduction<'r, T>) {
+	pub fn push(&mut self, s: Deduction<'r, T>) {
 		self.0.push(s)
 	}
 
@@ -35,11 +35,11 @@ impl<'r, T> Deduction<'r, T> {
 	}
 
 	/// Evaluates the expressions in the deducted statements.
-	pub fn eval<V, I>(
+	pub fn eval_with<V, I>(
 		self,
 		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Result<DeductionInstance<'r, T>, expression::Error>
+	) -> Result<DeductionsInstance<'r, T>, expression::Error>
 	where
 		T: Clone + PartialEq,
 		V: VocabularyMut,
@@ -49,7 +49,7 @@ impl<'r, T> Deduction<'r, T> {
 			+ ReverseTermInterpretation<Iri = V::Iri, BlankId = V::BlankId, Literal = V::Literal>,
 		I::Resource: PartialEq,
 	{
-		Ok(DeductionInstance(
+		Ok(DeductionsInstance(
 			self.0
 				.into_iter()
 				.map(|s| s.eval(vocabulary, interpretation))
@@ -58,7 +58,17 @@ impl<'r, T> Deduction<'r, T> {
 	}
 }
 
-impl<'r, T: Clone + Eq + Hash> Deduction<'r, T> {
+impl<'r> Deductions<'r> {
+	pub fn eval(
+		self,
+		generator: impl Generator,
+	) -> Result<DeductionsInstance<'r>, expression::Error> {
+		let mut interpretation = WithGenerator::new((), generator);
+		self.eval_with(&mut (), &mut interpretation)
+	}
+}
+
+impl<'r, T: Clone + Eq + Hash> Deductions<'r, T> {
 	pub fn validate<V, I, D>(
 		self,
 		vocabulary: &mut V,
@@ -92,7 +102,7 @@ impl<'r, T: Clone + Eq + Hash> Deduction<'r, T> {
 		D: FallibleSignedPatternMatchingDataset<Resource = T>,
 	{
 		let deduction = self
-			.eval(vocabulary, interpretation)
+			.eval_with(vocabulary, interpretation)
 			.map_err(ValidationError::Expression)?;
 		for group in deduction {
 			for Signed(sign, stm) in group.statements {
@@ -163,14 +173,14 @@ pub enum EvalError<I> {
 	Interpretation(I),
 }
 
-impl<'r, T> From<SubDeduction<'r, T>> for Deduction<'r, T> {
-	fn from(value: SubDeduction<'r, T>) -> Self {
+impl<'r, T> From<Deduction<'r, T>> for Deductions<'r, T> {
+	fn from(value: Deduction<'r, T>) -> Self {
 		Self(vec![value])
 	}
 }
 
 /// Deduced statements with a common cause.
-pub struct SubDeduction<'r, T> {
+pub struct Deduction<'r, T> {
 	/// Rule and variable substitution triggering this deduction.
 	pub entailment: Entailment<'r, T>,
 
@@ -178,7 +188,7 @@ pub struct SubDeduction<'r, T> {
 	pub statements: Vec<Signed<TripleStatementPattern<T>>>,
 }
 
-impl<'r, T> SubDeduction<'r, T> {
+impl<'r, T> Deduction<'r, T> {
 	pub fn new(entailment: Entailment<'r, T>) -> Self {
 		Self {
 			entailment,
@@ -190,7 +200,7 @@ impl<'r, T> SubDeduction<'r, T> {
 		self.statements.push(statement)
 	}
 
-	pub fn merge_with(&mut self, other: Deduction<T>) {
+	pub fn merge_with(&mut self, other: Deductions<T>) {
 		for s in other.0 {
 			self.statements.extend(s.statements)
 		}
@@ -201,7 +211,7 @@ impl<'r, T> SubDeduction<'r, T> {
 		self,
 		vocabulary: &mut V,
 		interpretation: &mut I,
-	) -> Result<SubDeductionInstance<'r, T>, expression::Error>
+	) -> Result<DeductionInstance<'r, T>, expression::Error>
 	where
 		T: Clone + PartialEq,
 		V: VocabularyMut,
@@ -227,7 +237,7 @@ impl<'r, T> SubDeduction<'r, T> {
 			);
 		}
 
-		Ok(SubDeductionInstance {
+		Ok(DeductionInstance {
 			entailment: self.entailment,
 			statements,
 		})

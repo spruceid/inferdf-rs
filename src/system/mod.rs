@@ -1,11 +1,11 @@
+//! Deduction systems.
+use crate::{
+	expression, pattern::TripleMatching, FallibleSignedPatternMatchingDataset, Signed,
+	SignedPatternMatchingDataset, Validation, ValidationError,
+};
 pub use crate::{
 	pattern,
-	rule::{Path, Rule},
-	Modal,
-};
-use crate::{
-	pattern::TripleMatching, FallibleSignedPatternMatchingDataset, Signed,
-	SignedPatternMatchingDataset, Validation, ValidationError,
+	rule::{Path, Rule}
 };
 use educe::Educe;
 use rdf_types::{
@@ -20,7 +20,7 @@ pub use deduction::*;
 mod deduction_intstance;
 pub use deduction_intstance::*;
 
-/// Deduction system.
+/// Deduction system (collection of rules).
 #[derive(Debug, Educe)]
 #[educe(Default)]
 pub struct System<T = Term> {
@@ -106,10 +106,22 @@ impl<T> IntoIterator for System<T> {
 }
 
 impl<T: Clone + Eq + Hash> System<T> {
+	/// Deduce new facts form the give dataset.
+	pub fn deduce<D>(&self, dataset: &D) -> Deductions<T>
+	where
+		D: SignedPatternMatchingDataset<Resource = T>,
+	{
+		let mut deductions = Deductions::default();
+		for rule in &self.rules {
+			deductions.merge_with(rule.deduce(dataset))
+		}
+		deductions
+	}
+
 	/// Deduce new facts from the given triple.
 	///
 	/// This function only uses existential rules to deduce facts.
-	pub fn deduce_from_triple<D>(&self, dataset: &D, triple: Signed<Triple<&T>>) -> Deduction<T>
+	pub fn deduce_from_triple<D>(&self, dataset: &D, triple: Signed<Triple<&T>>) -> Deductions<T>
 	where
 		D: SignedPatternMatchingDataset<Resource = T>,
 	{
@@ -123,19 +135,29 @@ impl<T: Clone + Eq + Hash> System<T> {
 		&self,
 		dataset: &D,
 		triple: Signed<Triple<&T>>,
-	) -> Result<Deduction<T>, D::Error>
+	) -> Result<Deductions<T>, D::Error>
 	where
 		D: FallibleSignedPatternMatchingDataset<Resource = T>,
 	{
-		let mut deduction = Deduction::default();
+		let mut deduction = Deductions::default();
 
 		for &path in self.paths.get(triple) {
-			if let Some(d) = self.try_deduce_from_path(dataset, triple, path)? {
-				deduction.merge_with(d)
-			}
+			deduction.merge_with(self.try_deduce_from_path(dataset, triple, path)?)
 		}
 
 		Ok(deduction)
+	}
+
+	/// Deduce new facts form the give dataset.
+	pub fn try_deduce<D>(&self, dataset: &D) -> Result<Deductions<T>, D::Error>
+	where
+		D: FallibleSignedPatternMatchingDataset<Resource = T>,
+	{
+		let mut deductions = Deductions::default();
+		for rule in &self.rules {
+			deductions.merge_with(rule.try_deduce(dataset)?)
+		}
+		Ok(deductions)
 	}
 
 	/// Deduce facts from the given rule path.
@@ -144,7 +166,7 @@ impl<T: Clone + Eq + Hash> System<T> {
 		dataset: &D,
 		triple: Signed<Triple<&T>>,
 		path: Path,
-	) -> Result<Option<Deduction<T>>, D::Error>
+	) -> Result<Deductions<T>, D::Error>
 	where
 		D: FallibleSignedPatternMatchingDataset<Resource = T>,
 	{
@@ -159,10 +181,36 @@ impl<T: Clone + Eq + Hash> System<T> {
 		rule.try_deduce_from(dataset, substitution, Some(path.pattern))
 	}
 
-	/// Deduce new facts from the given triple.
+	/// Validates the given dataset against this system
 	///
-	/// This function only uses existential rules to deduce facts.
-	pub fn try_validate<V, I, D>(
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn validate_with<V, I, D>(
+		&self,
+		vocabulary: &mut V,
+		interpretation: &mut I,
+		dataset: &D,
+	) -> Result<Validation, expression::Error>
+	where
+		V: VocabularyMut,
+		V::Iri: PartialEq,
+		I: InterpretationMut<V, Resource = T>
+			+ LiteralInterpretationMut<V::Literal>
+			+ ReverseTermInterpretation<Iri = V::Iri, BlankId = V::BlankId, Literal = V::Literal>,
+		D: SignedPatternMatchingDataset<Resource = T>,
+	{
+		for rule in &self.rules {
+			rule.validate_with(vocabulary, interpretation, dataset)?;
+		}
+
+		Ok(Validation::Ok)
+	}
+
+	/// Validates the given dataset against this system
+	///
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn try_validate_with<V, I, D>(
 		&self,
 		vocabulary: &mut V,
 		interpretation: &mut I,
@@ -178,6 +226,38 @@ impl<T: Clone + Eq + Hash> System<T> {
 	{
 		for rule in &self.rules {
 			rule.try_validate_with(vocabulary, interpretation, dataset)?;
+		}
+
+		Ok(Validation::Ok)
+	}
+}
+
+impl System {
+	/// Validates the given dataset against this system
+	///
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn validate<D>(&self, dataset: &D) -> Result<Validation, expression::Error>
+	where
+		D: SignedPatternMatchingDataset<Resource = Term>,
+	{
+		for rule in &self.rules {
+			rule.validate(dataset)?;
+		}
+
+		Ok(Validation::Ok)
+	}
+
+	/// Validates the given dataset against this system
+	///
+	/// Returns `Validation::Ok` if and only if any triple deduced from the
+	/// dataset is already in the dataset.
+	pub fn try_validate<D>(&self, dataset: &D) -> Result<Validation, ValidationError<D::Error>>
+	where
+		D: FallibleSignedPatternMatchingDataset<Resource = Term>,
+	{
+		for rule in &self.rules {
+			rule.try_validate(dataset)?;
 		}
 
 		Ok(Validation::Ok)
