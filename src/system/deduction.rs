@@ -137,7 +137,7 @@ impl<'r, T: Clone + Eq + Hash> Deductions<'r, T> {
 							let literal = vocabulary.literal(l).unwrap();
 							let type_ = literal.type_.as_lexical_type_ref_with(vocabulary);
 							if type_.is_iri(XSD_BOOLEAN) {
-								match xsd_types::Boolean::parse_xsd(&literal.value) {
+								match xsd_types::Boolean::parse_xsd(literal.value) {
 									Ok(xsd_types::Boolean(b)) => {
 										if b == expected {
 											found = true;

@@ -5,7 +5,7 @@ macro_rules! unexpected_token {
 }
 
 /// Creates a new triple pattern.
-/// 
+///
 /// The resulting value has type [`Pattern`](crate::Pattern).
 #[macro_export]
 macro_rules! pattern {
@@ -74,7 +74,7 @@ macro_rules! pattern {
 }
 
 /// Creates a list of patterns.
-/// 
+///
 /// The resulting value has type [`Vec<Pattern>`](crate::Pattern).
 #[macro_export]
 macro_rules! patterns {

@@ -101,7 +101,7 @@ impl<'e, R: Clone> Value<'e, R> {
 
 				for l in interpretation.literals_of(resource) {
 					if let Some(literal) = vocabulary.literal(l) {
-						if let Some(other) = value.replace(&literal.value) {
+						if let Some(other) = value.replace(literal.value) {
 							if other != *value.as_ref().unwrap() {
 								return Err(Error::AmbiguousLiteral);
 							}

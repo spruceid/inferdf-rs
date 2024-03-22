@@ -38,7 +38,7 @@
 //! from a given dataset.
 //!
 //! ```
-//! use rdf_types::{dataset::BTreeGraph, grdf_triples};
+//! use rdf_types::{dataset::IndexedBTreeGraph, grdf_triples};
 //! # let rule = inferdf::rule! {
 //! #   for ?person, ?country {
 //! #     ?person <"https://example.org/#citizenOf"> ?country .
@@ -48,7 +48,7 @@
 //! # };
 //!
 //! // Build an RDF dataset (a single graph here).
-//! let mut input: BTreeGraph = grdf_triples! [
+//! let mut input: IndexedBTreeGraph = grdf_triples! [
 //!   _:"FrançoisDupont" <"https://example.org/#citizenOf"> _:"France" .
 //! ].into_iter().collect();
 //!
@@ -68,7 +68,7 @@
 //!   }
 //! }
 //!
-//! let mut expected: BTreeGraph = grdf_triples! [
+//! let mut expected: IndexedBTreeGraph = grdf_triples! [
 //!   _:"FrançoisDupont" <"https://example.org/#citizenOf"> _:"France" .
 //!   _:"FrançoisDupont" <"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"> <"https://example.org/#Human"> .
 //! ].into_iter().collect();
@@ -84,7 +84,7 @@
 //! provides a [`Reason`] why the validation failed.
 //!
 //! ```
-//! use rdf_types::{dataset::BTreeGraph, grdf_triples};
+//! use rdf_types::{dataset::IndexedBTreeGraph, grdf_triples};
 //! # let rule = inferdf::rule! {
 //! #   for ?person, ?country {
 //! #     ?person <"https://example.org/#citizenOf"> ?country .
@@ -94,7 +94,7 @@
 //! # };
 //!
 //! // Build an RDF dataset (a single graph here).
-//! let input: BTreeGraph = grdf_triples! [
+//! let input: IndexedBTreeGraph = grdf_triples! [
 //!   _:"FrançoisDupont" <"https://example.org/#citizenOf"> _:"France" .
 //!   _:"FrançoisDupont" <"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"> <"https://example.org/#Human"> .
 //! ].into_iter().collect();

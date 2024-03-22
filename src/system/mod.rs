@@ -5,7 +5,7 @@ use crate::{
 };
 pub use crate::{
 	pattern,
-	rule::{Path, Rule}
+	rule::{Path, Rule},
 };
 use educe::Educe;
 use rdf_types::{

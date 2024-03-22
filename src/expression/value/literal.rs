@@ -44,7 +44,7 @@ pub trait LiteralValue: Sized + PartialEq {
 		for l in interpretation.literals_of(resource) {
 			if let Some(literal) = vocabulary.literal(l) {
 				let type_ = literal.type_.as_lexical_type_ref_with(vocabulary);
-				if let Some(v) = Self::parse_literal(&literal.value, type_)? {
+				if let Some(v) = Self::parse_literal(literal.value, type_)? {
 					if let Some(other) = value.replace(v) {
 						if other != *value.as_ref().unwrap() {
 							return Err(Error::AmbiguousLiteral);

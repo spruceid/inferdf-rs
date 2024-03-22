@@ -53,23 +53,22 @@ impl<'a, R> Comparable<'a, R> {
 					l.type_.as_lexical_type_ref_with(vocabulary)
 				{
 					if iri == XSD_BOOLEAN {
-						result.refine(Comparable::Boolean(xsd_types::Boolean::parse_xsd(
-							&l.value,
-						)?))?
+						result
+							.refine(Comparable::Boolean(xsd_types::Boolean::parse_xsd(l.value)?))?
 					}
 
 					if xsd_types::DecimalDatatype::from_iri(iri).is_some() {
 						result.refine(Comparable::Decimal(Cow::Owned(
-							xsd_types::Decimal::parse_xsd(&l.value)?,
+							xsd_types::Decimal::parse_xsd(l.value)?,
 						)))?
 					}
 
 					if iri == XSD_STRING {
-						result.refine(Comparable::String(&l.value))?;
+						result.refine(Comparable::String(l.value))?;
 					}
 
 					if iri == regex::TYPE_IRI {
-						result.refine(Comparable::Regex(Cow::Owned(Regex::new(&l.value)?)))?
+						result.refine(Comparable::Regex(Cow::Owned(Regex::new(l.value)?)))?
 					}
 				}
 			}

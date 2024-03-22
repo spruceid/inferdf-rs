@@ -1,9 +1,9 @@
 use inferdf::{rule, Validation};
-use rdf_types::{dataset::BTreeGraph, grdf_triples};
+use rdf_types::{dataset::IndexedBTreeGraph, grdf_triples};
 
 #[test]
 fn validate_comparison() {
-	let dataset: BTreeGraph = grdf_triples![
+	let dataset: IndexedBTreeGraph = grdf_triples![
 		_:"0" <"https://example.org/#age"> "21"^^"http://www.w3.org/2001/XMLSchema#int" .
 	]
 	.into_iter()
@@ -22,7 +22,7 @@ fn validate_comparison() {
 
 #[test]
 fn validate_regex() {
-	let dataset: BTreeGraph = grdf_triples![
+	let dataset: IndexedBTreeGraph = grdf_triples![
 		_:"0" <"https://example.org/#email"> "user@domain.com" .
 	]
 	.into_iter()
@@ -41,7 +41,7 @@ fn validate_regex() {
 
 #[test]
 fn validation_failure() {
-	let dataset: BTreeGraph = grdf_triples![
+	let dataset: IndexedBTreeGraph = grdf_triples![
 		_:"0" <"https://example.org/#age"> "12"^^"http://www.w3.org/2001/XMLSchema#int" .
 	]
 	.into_iter()
